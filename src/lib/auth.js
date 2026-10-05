@@ -18,7 +18,7 @@ export async function getSession() {
 export async function getUserRole(userId) {
   const { data, error } = await supabase
     .from('org_hierarchy')
-    .select('role, full_name, region, reports_to, id')
+    .select('role, full_name, region, reports_to, id, approved')
     .eq('user_id', userId)
     .single();
   if (error) return null;
@@ -37,4 +37,37 @@ export async function getUserRole(userId) {
   }
 
   return data;
+}
+
+// Self-service signup — restricted to @accelq.com addresses. Creates the
+// Supabase Auth user with an active session (email confirmation is off; the
+// admin-approval gate is what actually blocks access), then the caller must
+// immediately call registerPending() to create the pending org_hierarchy row.
+export async function signUp(email, password) {
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+// Creates the caller's own pending org_hierarchy row (approved: false) via
+// the admin-users edge function, using their own just-created session.
+export async function registerPending(fullName) {
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    body: { action: 'self_register', full_name: fullName },
+  });
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+export async function requestPasswordReset(email) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: \`\${window.location.origin}/reset-password\`,
+  });
+  if (error) throw error;
+}
+
+export async function updatePassword(newPassword) {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
 }
