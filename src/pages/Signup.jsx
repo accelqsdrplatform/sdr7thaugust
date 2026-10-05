@@ -20,7 +20,7 @@ export default function Signup() {
 
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail.endsWith(ALLOWED_DOMAIN)) {
-      setError(\`Signups are restricted to \${ALLOWED_DOMAIN} email addresses\`);
+      setError(`Signups are restricted to ${ALLOWED_DOMAIN} email addresses`);
       return;
     }
     if (password.length < 8) {
