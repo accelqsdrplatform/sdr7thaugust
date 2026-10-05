@@ -28,6 +28,28 @@ const RESEARCH_DEFAULTS = [
   { key: 'recentNews', label: 'Recent News',       icon: '📰', hint: 'one relevant news item, funding, or digital transformation initiative' },
   { key: 'painPoints', label: 'Pain Points',       icon: '🔥', hint: 'top 2 QA/testing pain points ACCELQ solves for this company' },
 ];
+
+const RESEARCH_LOCK_DAYS = 90;
+
+function normalizeDomain(website) {
+  if (!website) return '';
+  return website.trim().toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+    .split('?')[0];
+}
+
+function msUntilUnlock(ts) {
+  if (!ts) return 0;
+  const unlockAt = new Date(ts).getTime() + RESEARCH_LOCK_DAYS * 24 * 60 * 60 * 1000;
+  return Math.max(0, unlockAt - Date.now());
+}
+
+function formatUnlockDate(ts) {
+  const unlockAt = new Date(new Date(ts).getTime() + RESEARCH_LOCK_DAYS * 24 * 60 * 60 * 1000);
+  return unlockAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 const COMMON_ENTERPRISE_APPS = ['SAP','Oracle','Workday','ServiceNow','Salesforce','Microsoft Dynamics','SAP S/4HANA','Oracle EBS','PeopleSoft','Guidewire','Siebel','Veeva'];
 const PITCH_TYPES = ['Salesforce','ServiceNow','SAP','Workday','Oracle','MS Dynamics','Pega','nCino','Coupa','Web','Mobile','API'];
 const PERSONA_LIST = ['Executive / Economic Buyer','QA / Quality Leader','Engineering Leader','Automation / Technical Expert','DevOps / Transformation / Architecture','Practitioner / End User'];
@@ -523,6 +545,26 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const industries = Array.isArray(research.industries) ? research.industries : [];
   const productServices = Array.isArray(research.products_services) ? research.products_services : [];
 
+  const fullLockMs = msUntilUnlock(data.research_meta?.full);
+  const fullLocked = fullLockMs > 0;
+  const fullUnlockDate = fullLocked ? formatUnlockDate(data.research_meta.full) : null;
+
+  async function findDomainSiblings() {
+    const domain = normalizeDomain(data.website);
+    if (!domain) return [];
+    const { data: rows } = await supabase.from('accounts').select('id, website, research, research_meta').neq('id', data.id);
+    return (rows || []).filter(r => normalizeDomain(r.website) === domain);
+  }
+
+  async function syncResearchAcrossDomain(metaKey, researchPatch, ts) {
+    const siblings = await findDomainSiblings();
+    for (const sib of siblings) {
+      const mergedResearch = { ...(sib.research || {}), ...researchPatch };
+      const mergedMeta = { ...(sib.research_meta || {}), [metaKey]: ts };
+      await supabase.from('accounts').update({ research: mergedResearch, research_meta: mergedMeta, updated_at: new Date().toISOString() }).eq('id', sib.id);
+    }
+  }
+
   async function patch(updates) {
     setSaving(true);
     const merged = { ...data, ...updates };
@@ -565,6 +607,14 @@ setSaving(false);
     setCompanyNotesList(cn || []);
   }, [data.name]);
   useEffect(() => { fetchCompanyNotes(); }, [fetchCompanyNotes]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: row } = await supabase.from('accounts').select('research_meta').eq('id', account.id).maybeSingle();
+      if (!cancelled) setData(d => ({ ...d, research_meta: row?.research_meta || {} }));
+    })();
+    return () => { cancelled = true; };
+  }, [account.id]);
   useEffect(() => {
     const ids = contacts.map(c => c.id);
     if (!ids.length) { setContactNotesMap({}); return; }
@@ -635,12 +685,31 @@ setSaving(false);
   }
 
   async function generateResearch(key, label) {
+    if (msUntilUnlock(data.research_meta?.[key]) > 0) return;
     setResearchGenerating(g => ({ ...g, [key]: true }));
     try {
+      // Domain-level cache: reuse a sibling account's fresh research instead of
+      // burning another AI call when the same company already has it.
+      const siblings = await findDomainSiblings();
+      let freshSibling = null;
+      for (const sib of siblings) {
+        const ts = sib.research_meta?.[key];
+        if (ts && msUntilUnlock(ts) > 0 && (!freshSibling || new Date(ts) > new Date(freshSibling.research_meta[key]))) freshSibling = sib;
+      }
+      if (freshSibling && freshSibling.research?.[key]) {
+        const ts = freshSibling.research_meta[key];
+        await patch({ research: { ...research, [key]: freshSibling.research[key] }, research_meta: { ...(data.research_meta || {}), [key]: ts } });
+        setResearchGenerating(g => ({ ...g, [key]: false }));
+        return;
+      }
       const result = await supabase.functions.invoke('generate-research', {
         body: { account: { name: data.name, industry: data.industry, country: data.country, revenue_millions: data.revenue_millions, signals: data.signals, testing_tools: data.testing_tools }, sectionKey: key, sectionLabel: label }
       });
-      if (!result.error && result.data?.text) await saveResearch(key, result.data.text);
+      if (!result.error && result.data?.text) {
+        const ts = new Date().toISOString();
+        await patch({ research: { ...research, [key]: result.data.text }, research_meta: { ...(data.research_meta || {}), [key]: ts } });
+        await syncResearchAcrossDomain(key, { [key]: result.data.text }, ts);
+      }
     } catch(e) { console.error(e); }
     setResearchGenerating(g => ({ ...g, [key]: false }));
   }
@@ -652,8 +721,24 @@ setSaving(false);
   }
 
   async function runFullAIResearch() {
+    if (msUntilUnlock(data.research_meta?.full) > 0) return;
     setAiResearching(true);
     try {
+      // Domain-level cache: reuse a sibling account's fresh full research
+      // instead of burning another AI call when the same company already has it.
+      const siblings = await findDomainSiblings();
+      let freshSibling = null;
+      for (const sib of siblings) {
+        const ts = sib.research_meta?.full;
+        if (ts && msUntilUnlock(ts) > 0 && (!freshSibling || new Date(ts) > new Date(freshSibling.research_meta.full))) freshSibling = sib;
+      }
+      if (freshSibling) {
+        const ts = freshSibling.research_meta.full;
+        await patch({ research: { ...(freshSibling.research || {}) }, research_meta: { ...(data.research_meta || {}), full: ts } });
+        setAiResearching(false);
+        return;
+      }
+
       const result = await supabase.functions.invoke('generate-research', {
         body: {
           mode: 'full',
@@ -771,7 +856,10 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
       }
       if (signalsChanged) updates.signals = newSignals;
 
+      const ts = new Date().toISOString();
+      updates.research_meta = { ...(data.research_meta || {}), full: ts };
       await patch(updates);
+      await syncResearchAcrossDomain('full', newResearch, ts);
     } catch(e) { console.error('runFullAIResearch error:', e); }
     setAiResearching(false);
   }
@@ -942,12 +1030,12 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
             }} style={{ padding: '6px 13px', background: '#f5f5f5', borderRadius: 8, fontSize: 12, border: '1px solid #e5e7eb', cursor: 'pointer', color: '#555' }}>
               ⬇️ Export
             </button>
-            <button onClick={runFullAIResearch} disabled={aiResearching} title="AI populates tools, apps, signals & research in one shot" style={{
-              padding: '6px 14px', background: aiResearching ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #2563eb)',
-              color: aiResearching ? '#9ca3af' : '#fff', borderRadius: 8, fontSize: 12, fontWeight: 600,
-              border: 'none', cursor: aiResearching ? 'wait' : 'pointer', whiteSpace: 'nowrap',
+            <button onClick={runFullAIResearch} disabled={aiResearching || fullLocked} title={fullLocked ? `Available again on ${fullUnlockDate}` : 'AI populates tools, apps, signals & research in one shot'} style={{
+              padding: '6px 14px', background: (aiResearching || fullLocked) ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #2563eb)',
+              color: (aiResearching || fullLocked) ? '#9ca3af' : '#fff', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              border: 'none', cursor: aiResearching ? 'wait' : (fullLocked ? 'not-allowed' : 'pointer'), whiteSpace: 'nowrap',
             }}>
-              {aiResearching ? '⏳ Researching…' : '🤖 AI Research'}
+              {aiResearching ? '⏳ Researching…' : fullLocked ? `🔒 Locked` : '🤖 AI Research'}
             </button>
             {saving && <span style={{ fontSize: 11, color: '#9ca3af' }}>Saving…</span>}
           </div>
@@ -1090,12 +1178,12 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                 <div style={{ fontSize: 32, marginBottom: 12 }}>🤖</div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#5b21b6', marginBottom: 6 }}>No intel yet</div>
                 <div style={{ fontSize: 13, color: '#7c3aed', marginBottom: 16 }}>Run AI Research to generate "Important to Know" pitch bullets and a recent signals feed for this account.</div>
-                <button onClick={runFullAIResearch} disabled={aiResearching} style={{
-                  padding: '10px 24px', background: aiResearching ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #2563eb)',
-                  color: aiResearching ? '#9ca3af' : '#fff', borderRadius: 9, fontSize: 13, fontWeight: 600,
-                  border: 'none', cursor: aiResearching ? 'wait' : 'pointer',
+                <button onClick={runFullAIResearch} disabled={aiResearching || fullLocked} title={fullLocked ? `Available again on ${fullUnlockDate}` : undefined} style={{
+                  padding: '10px 24px', background: (aiResearching || fullLocked) ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #2563eb)',
+                  color: (aiResearching || fullLocked) ? '#9ca3af' : '#fff', borderRadius: 9, fontSize: 13, fontWeight: 600,
+                  border: 'none', cursor: aiResearching ? 'wait' : (fullLocked ? 'not-allowed' : 'pointer'),
                 }}>
-                  {aiResearching ? '⏳ Researching…' : '🤖 Run AI Research'}
+                  {aiResearching ? '⏳ Researching…' : fullLocked ? `🔒 Available ${fullUnlockDate}` : '🤖 Run AI Research'}
                 </button>
               </div>
             )}
@@ -1108,12 +1196,17 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
               </button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              {RESEARCH_DEFAULTS.map(r => (
-                <ResearchCard key={r.key} icon={r.icon} label={r.label} value={research[r.key] || ''}
-                  generating={!!researchGenerating[r.key]}
-                  onGenerate={() => generateResearch(r.key, r.label)}
-                  onSave={val => saveResearch(r.key, val)} />
-              ))}
+              {RESEARCH_DEFAULTS.map(r => {
+                const lockMs = msUntilUnlock(data.research_meta?.[r.key]);
+                return (
+                  <ResearchCard key={r.key} icon={r.icon} label={r.label} value={research[r.key] || ''}
+                    generating={!!researchGenerating[r.key]}
+                    locked={lockMs > 0}
+                    lockedUntil={lockMs > 0 ? formatUnlockDate(data.research_meta[r.key]) : null}
+                    onGenerate={() => generateResearch(r.key, r.label)}
+                    onSave={val => saveResearch(r.key, val)} />
+                );
+              })}
               {customResearch.map((s, idx) => (
                 <ResearchCard key={s.key} icon="📌" label={s.label} value={s.value || ''}
                   generating={false} onGenerate={() => {}}
@@ -1274,12 +1367,12 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#5b21b6' }}>🤖 AI-Powered Tech Intelligence</div>
                 <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 2 }}>Auto-detect testing tools, enterprise apps & SaaS platforms.</div>
               </div>
-              <button onClick={runFullAIResearch} disabled={aiResearching} style={{
-                padding: '8px 18px', background: aiResearching ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #2563eb)',
-                color: aiResearching ? '#9ca3af' : '#fff', borderRadius: 9, fontSize: 13, fontWeight: 600,
-                border: 'none', cursor: aiResearching ? 'wait' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+              <button onClick={runFullAIResearch} disabled={aiResearching || fullLocked} title={fullLocked ? `Available again on ${fullUnlockDate}` : undefined} style={{
+                padding: '8px 18px', background: (aiResearching || fullLocked) ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #2563eb)',
+                color: (aiResearching || fullLocked) ? '#9ca3af' : '#fff', borderRadius: 9, fontSize: 13, fontWeight: 600,
+                border: 'none', cursor: aiResearching ? 'wait' : (fullLocked ? 'not-allowed' : 'pointer'), whiteSpace: 'nowrap', flexShrink: 0,
               }}>
-                {aiResearching ? '⏳ Generating…' : '✨ Generate with AI'}
+                {aiResearching ? '⏳ Generating…' : fullLocked ? `🔒 Locked until ${fullUnlockDate}` : '✨ Generate with AI'}
               </button>
             </div>
 
@@ -1595,7 +1688,7 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
 }
 
 /* RESEARCH CARD */
-function ResearchCard({ icon, label, value, generating, onGenerate, onSave, onRemove }) {
+function ResearchCard({ icon, label, value, generating, locked, lockedUntil, onGenerate, onSave, onRemove }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   useEffect(() => { setDraft(value); }, [value]);
@@ -1608,11 +1701,11 @@ function ResearchCard({ icon, label, value, generating, onGenerate, onSave, onRe
         {onRemove && (
           <button onClick={onRemove} style={{ fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>✕</button>
         )}
-        <button onClick={onGenerate} disabled={generating} style={{
-          padding: '4px 12px', background: generating ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-          color: generating ? '#9ca3af' : '#fff', borderRadius: 7, fontSize: 11, fontWeight: 600, border: 'none',
-          cursor: generating ? 'wait' : 'pointer',
-        }}>{generating ? '⏳ Generating…' : '✨ Generate'}</button>
+        <button onClick={onGenerate} disabled={generating || locked} title={locked ? `Available again on ${lockedUntil}` : undefined} style={{
+          padding: '4px 12px', background: (generating || locked) ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+          color: (generating || locked) ? '#9ca3af' : '#fff', borderRadius: 7, fontSize: 11, fontWeight: 600, border: 'none',
+          cursor: generating ? 'wait' : (locked ? 'not-allowed' : 'pointer'),
+        }}>{generating ? '⏳ Generating…' : locked ? `🔒 ${lockedUntil}` : '✨ Generate'}</button>
       </div>
       <div style={{ padding: '12px 16px', minHeight: 70 }}>
         {editing ? (
