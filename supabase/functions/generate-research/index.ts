@@ -5,6 +5,33 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Claude responses can include multiple content blocks (e.g. thinking blocks
+// before the final text on newer models) — grab all text blocks, not just [0].
+function extractText(aiData: any): string {
+  const blocks = aiData?.content || []
+  return blocks.filter((b: any) => b?.type === 'text').map((b: any) => b.text).join('\n').trim()
+}
+
+// Models sometimes wrap JSON in markdown fences or add a short preamble even
+// when told not to. Strip fences, then fall back to extracting the first
+// balanced {...} or [...] substring if a direct parse fails.
+function parseJsonLoose(raw: string): any {
+  const cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+  try {
+    return JSON.parse(cleaned)
+  } catch {}
+  const objMatch = cleaned.match(/\{[\s\S]*\}/)
+  const arrMatch = cleaned.match(/\[[\s\S]*\]/)
+  let candidate: string | null = null
+  if (objMatch && arrMatch) {
+    candidate = (objMatch.index as number) <= (arrMatch.index as number) ? objMatch[0] : arrMatch[0]
+  } else {
+    candidate = objMatch ? objMatch[0] : (arrMatch ? arrMatch[0] : null)
+  }
+  if (candidate) return JSON.parse(candidate)
+  throw new Error('No valid JSON found in response')
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -168,11 +195,10 @@ Return ONLY a valid JSON array (no markdown):
       // Await both
       const [structuredData, intelResp] = await Promise.all([structuredResp.json(), intelRespPromise])
 
-      const rawStructured = structuredData.content?.[0]?.text || '{}'
+      const rawStructured = extractText(structuredData) || '{}'
       let parsed: any = {}
       try {
-        const cleaned = rawStructured.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
-        parsed = JSON.parse(cleaned)
+        parsed = parseJsonLoose(rawStructured)
       } catch {
         return new Response(JSON.stringify({ error: 'AI returned invalid JSON for structured data', raw: rawStructured }), {
           status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -181,11 +207,10 @@ Return ONLY a valid JSON array (no markdown):
 
       // Parse intel
       const intelData = await intelResp.json()
-      const rawIntel = intelData.content?.[0]?.text || '[]'
+      const rawIntel = extractText(intelData) || '[]'
       let importantToKnow: any[] = []
       try {
-        const cleanedIntel = rawIntel.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
-        importantToKnow = JSON.parse(cleanedIntel)
+        importantToKnow = parseJsonLoose(rawIntel)
         if (!Array.isArray(importantToKnow)) importantToKnow = []
       } catch {
         importantToKnow = []
@@ -217,7 +242,7 @@ Return ONLY a valid JSON array (no markdown):
     })
 
     const aiData = await response.json()
-    const text = aiData.content?.[0]?.text || ''
+    const text = extractText(aiData) || ''
 
     return new Response(JSON.stringify({ text }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
