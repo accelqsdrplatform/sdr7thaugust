@@ -116,7 +116,7 @@ Keep all arrays to 3-6 items max. Be specific and realistic for this company's s
         fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-          body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1800, messages: [{ role: 'user', content: structuredPrompt }] })
+          body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 1800, messages: [{ role: 'user', content: structuredPrompt }] })
         })
       ])
 
@@ -162,7 +162,7 @@ Return ONLY a valid JSON array (no markdown):
       const intelRespPromise = fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2500, messages: [{ role: 'user', content: intelPrompt }] })
+        body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 2500, messages: [{ role: 'user', content: intelPrompt }] })
       })
 
       // Await both
@@ -213,7 +213,7 @@ Return ONLY a valid JSON array (no markdown):
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 300, messages: [{ role: 'user', content: prompt }] })
+      body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 300, messages: [{ role: 'user', content: prompt }] })
     })
 
     const aiData = await response.json()
