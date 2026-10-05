@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { signIn } from '../lib/auth';
 
 export default function Login() {
@@ -51,21 +52,29 @@ export default function Login() {
               style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ fontSize: 12, fontWeight: 500, color: '#444', display: 'block', marginBottom: 5 }}>Password</label>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: '#444' }}>Password</label>
+              <Link to="/forgot-password" style={{ fontSize: 12, color: '#2563eb', textDecoration: 'none' }}>Forgot password?</Link>
+            </div>
             <input
               type="password" value={password} onChange={e => setPassword(e.target.value)} required
               placeholder="••••••••"
               style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
+          <div style={{ marginBottom: 10 }} />
           <button
             type="submit" disabled={loading}
-            style={{ width: '100%', padding: '11px', background: loading ? '#93c5fd' : '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer' }}
+            style={{ width: '100%', padding: '11px', background: loading ? '#93c5fd' : '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginTop: 10 }}
           >
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        <div style={{ marginTop: 20, textAlign: 'center', fontSize: 13, color: '#666' }}>
+          Don't have an account? <Link to="/signup" style={{ color: '#2563eb', fontWeight: 500, textDecoration: 'none' }}>Sign up</Link>
+        </div>
       </div>
     </div>
   );
