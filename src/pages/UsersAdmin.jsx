@@ -41,7 +41,7 @@ function PendingApprovals({ isAdmin, managerOptions, onChanged, showToast }) {
     try {
       await callFn({ action: 'approve_user', user_id: u.id, role: ed.role, region: ed.region, reports_to: ed.reports_to || null });
       setPending(prev => prev.filter(p => p.id !== u.id));
-      showToast(\`Approved \${u.full_name || u.email}\`);
+      showToast(`Approved ${u.full_name || u.email}`);
       onChanged();
     } catch (e) {
       showToast(e.message, 'error');
@@ -51,7 +51,7 @@ function PendingApprovals({ isAdmin, managerOptions, onChanged, showToast }) {
   }
 
   async function reject(u) {
-    if (!window.confirm(\`Reject and remove the signup for \${u.full_name || u.email}? They'll be able to sign up again later.\`)) return;
+    if (!window.confirm(`Reject and remove the signup for ${u.full_name || u.email}? They'll be able to sign up again later.`)) return;
     setBusy(prev => ({ ...prev, [u.id]: true }));
     try {
       await callFn({ action: 'reject_user', user_id: u.id });
@@ -224,7 +224,7 @@ export default function UsersAdmin() {
       {toast && (
         <div style={{ position: 'fixed', top: 20, right: 24, zIndex: 9999,
           background: toast.type === 'error' ? '#fef2f2' : '#f0fdf4',
-          border: \`1px solid \${toast.type === 'error' ? '#fca5a5' : '#86efac'}\`,
+          border: `1px solid ${toast.type === 'error' ? '#fca5a5' : '#86efac'}`,
           color: toast.type === 'error' ? '#dc2626' : '#166534',
           padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 500 }}>
           {toast.msg}
@@ -292,8 +292,8 @@ export default function UsersAdmin() {
                         {u.role ? ROLE_LABELS[u.role] : 'No role'}
                       </span>
                       {u.has_profile && (
-                        <button onClick={() => navigate(\`/scorecard/\${u.id}\`)}
-                          title={\`View \${u.full_name || u.email}'s scorecard\`}
+                        <button onClick={() => navigate(`/scorecard/${u.id}`)}
+                          title={`View ${u.full_name || u.email}'s scorecard`}
                           style={{ padding: '6px 14px', background: '#f5f3ff', border: '0.5px solid #ddd6fe',
                             borderRadius: 8, fontSize: 12, cursor: 'pointer', color: '#6d28d9', fontWeight: 500 }}>
                           📊 Scorecard
@@ -301,7 +301,7 @@ export default function UsersAdmin() {
                       )}
                       {isAdmin && !isSelf && u.has_profile && !viewingAs && (
                         <button onClick={() => handleViewAs(u)} disabled={isSwitching}
-                          title={\`Browse the platform as \${u.full_name || u.email}\`}
+                          title={`Browse the platform as ${u.full_name || u.email}`}
                           style={{ padding: '6px 14px', background: '#eff6ff', border: '0.5px solid #bfdbfe',
                             borderRadius: 8, fontSize: 12, cursor: 'pointer', color: '#1d4ed8', fontWeight: 500,
                             opacity: isSwitching ? 0.6 : 1 }}>
