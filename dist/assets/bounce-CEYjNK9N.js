@@ -1,1 +1,0 @@
-import{b as a}from"./index-CN4FVFZB.js";async function i(t,n,c){const e=new Date().toISOString(),{error:o}=await a.from("contacts").update({status:"bounced",bounced:!0,bounced_at:e,response_state:"Bounce",last_touchpoint_date:e}).eq("id",t);if(o)throw o;await a.from("activity_log").insert({actor_id:n,contact_id:t,activity_type:"bounce_detected",details:{}})}export{i as m};
