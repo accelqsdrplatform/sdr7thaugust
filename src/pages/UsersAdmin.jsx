@@ -18,6 +18,117 @@ async function callFn(body) {
   return data;
 }
 
+function PendingApprovals({ isAdmin, managerOptions, onChanged, showToast }) {
+  const [pending, setPending] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [edits, setEdits] = useState({}); // { userId: { role, region, reports_to } }
+  const [busy, setBusy] = useState({});
+
+  useEffect(() => {
+    if (!isAdmin) { setLoading(false); return; }
+    callFn({ action: 'list_pending' })
+      .then(d => { setPending(d.pending || []); setLoading(false); })
+      .catch(e => { showToast(e.message, 'error'); setLoading(false); });
+  }, [isAdmin]);
+
+  function setEdit(uid, patch) {
+    setEdits(prev => ({ ...prev, [uid]: { role: 'owner', region: '', reports_to: '', ...prev[uid], ...patch } }));
+  }
+
+  async function approve(u) {
+    const ed = edits[u.id] || { role: 'owner', region: '', reports_to: '' };
+    setBusy(prev => ({ ...prev, [u.id]: true }));
+    try {
+      await callFn({ action: 'approve_user', user_id: u.id, role: ed.role, region: ed.region, reports_to: ed.reports_to || null });
+      setPending(prev => prev.filter(p => p.id !== u.id));
+      showToast(\`Approved \${u.full_name || u.email}\`);
+      onChanged();
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setBusy(prev => ({ ...prev, [u.id]: false }));
+    }
+  }
+
+  async function reject(u) {
+    if (!window.confirm(\`Reject and remove the signup for \${u.full_name || u.email}? They'll be able to sign up again later.\`)) return;
+    setBusy(prev => ({ ...prev, [u.id]: true }));
+    try {
+      await callFn({ action: 'reject_user', user_id: u.id });
+      setPending(prev => prev.filter(p => p.id !== u.id));
+      showToast('Signup rejected');
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setBusy(prev => ({ ...prev, [u.id]: false }));
+    }
+  }
+
+  if (!isAdmin || loading || pending.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: '#111', margin: 0 }}>Pending Approvals</h2>
+        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#fef9c3', color: '#854d0e' }}>{pending.length}</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {pending.map(u => {
+          const ed = edits[u.id] || { role: 'owner', region: '', reports_to: '' };
+          const isBusy = busy[u.id];
+          return (
+            <div key={u.id} style={{ background: '#fffdf5', border: '0.5px solid #fde68a', borderRadius: 12, padding: '14px 18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{u.full_name || <span style={{ color: '#aaa', fontStyle: 'italic' }}>No name given</span>}</div>
+                  <div style={{ fontSize: 12, color: '#888' }}>{u.email}</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 4 }}>Role</label>
+                  <select value={ed.role} onChange={e => setEdit(u.id, { role: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, background: '#fff', boxSizing: 'border-box' }}>
+                    {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 4 }}>Region</label>
+                  <input value={ed.region} onChange={e => setEdit(u.id, { region: e.target.value })}
+                    placeholder="e.g. APAC, Banking"
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 4 }}>Reports to</label>
+                  <select value={ed.reports_to} onChange={e => setEdit(u.id, { reports_to: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, background: '#fff', boxSizing: 'border-box' }}>
+                    <option value="">— No manager —</option>
+                    {managerOptions.map(m => (
+                      <option key={m.id} value={m.id}>{m.full_name || m.id} ({ROLE_LABELS[m.role] || m.role})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => approve(u)} disabled={isBusy}
+                  style={{ padding: '7px 18px', background: '#15803d', color: '#fff', border: 'none',
+                    borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', opacity: isBusy ? 0.7 : 1 }}>
+                  {isBusy ? 'Working…' : 'Approve'}
+                </button>
+                <button onClick={() => reject(u)} disabled={isBusy}
+                  style={{ padding: '7px 14px', background: '#fef2f2', border: '0.5px solid #fecaca',
+                    borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#dc2626' }}>
+                  Reject
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function UsersAdmin() {
   const { profile, user, viewAsUser, viewingAs } = useAuth();
   const navigate = useNavigate();
@@ -28,6 +139,7 @@ export default function UsersAdmin() {
   const [switching, setSwitching] = useState({});
   const [toast, setToast] = useState(null);
   const [editing, setEditing] = useState({}); // { userId: { role, full_name, region, reports_to } }
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const isAdmin = profile?.role === 'admin';
   const isSubAdmin = profile?.role === 'sub-admin';
@@ -45,7 +157,7 @@ export default function UsersAdmin() {
         setLoading(false);
       })
       .catch(e => { setToast({ msg: e.message, type: 'error' }); setLoading(false); });
-  }, [viewingAs?.id]);
+  }, [viewingAs?.id, refreshKey]);
 
   function startEdit(u) {
     setEditing(prev => ({
@@ -112,7 +224,7 @@ export default function UsersAdmin() {
       {toast && (
         <div style={{ position: 'fixed', top: 20, right: 24, zIndex: 9999,
           background: toast.type === 'error' ? '#fef2f2' : '#f0fdf4',
-          border: `1px solid ${toast.type === 'error' ? '#fca5a5' : '#86efac'}`,
+          border: \`1px solid \${toast.type === 'error' ? '#fca5a5' : '#86efac'}\`,
           color: toast.type === 'error' ? '#dc2626' : '#166534',
           padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 500 }}>
           {toast.msg}
@@ -126,6 +238,13 @@ export default function UsersAdmin() {
             'Manage your team — assign regions and reporting lines within your own downline.'} {users.length} users {isAdmin ? 'total' : 'in your team'}.
         </p>
       </div>
+
+      <PendingApprovals
+        isAdmin={isAdmin}
+        managerOptions={managerOptions}
+        onChanged={() => setRefreshKey(k => k + 1)}
+        showToast={showToast}
+      />
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 48, color: '#aaa' }}>Loading team…</div>
@@ -173,8 +292,8 @@ export default function UsersAdmin() {
                         {u.role ? ROLE_LABELS[u.role] : 'No role'}
                       </span>
                       {u.has_profile && (
-                        <button onClick={() => navigate(`/scorecard/${u.id}`)}
-                          title={`View ${u.full_name || u.email}'s scorecard`}
+                        <button onClick={() => navigate(\`/scorecard/\${u.id}\`)}
+                          title={\`View \${u.full_name || u.email}'s scorecard\`}
                           style={{ padding: '6px 14px', background: '#f5f3ff', border: '0.5px solid #ddd6fe',
                             borderRadius: 8, fontSize: 12, cursor: 'pointer', color: '#6d28d9', fontWeight: 500 }}>
                           📊 Scorecard
@@ -182,7 +301,7 @@ export default function UsersAdmin() {
                       )}
                       {isAdmin && !isSelf && u.has_profile && !viewingAs && (
                         <button onClick={() => handleViewAs(u)} disabled={isSwitching}
-                          title={`Browse the platform as ${u.full_name || u.email}`}
+                          title={\`Browse the platform as \${u.full_name || u.email}\`}
                           style={{ padding: '6px 14px', background: '#eff6ff', border: '0.5px solid #bfdbfe',
                             borderRadius: 8, fontSize: 12, cursor: 'pointer', color: '#1d4ed8', fontWeight: 500,
                             opacity: isSwitching ? 0.6 : 1 }}>
