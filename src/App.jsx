@@ -5,6 +5,10 @@ import AppShell from './components/layout/AppShell';
 
 // Lazy-load every page — only downloaded when first visited
 const Login        = lazy(() => import('./pages/Login'));
+const Signup        = lazy(() => import('./pages/Signup'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword  = lazy(() => import('./pages/ResetPassword'));
+const PendingApproval = lazy(() => import('./pages/PendingApproval'));
 const Dashboard    = lazy(() => import('./pages/Dashboard'));
 const Contacts     = lazy(() => import('./pages/Contacts'));
 const FollowUps    = lazy(() => import('./pages/FollowUps'));
@@ -31,13 +35,16 @@ const PageLoader = () => (
 );
 
 function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#aaa', fontSize: 14 }}>
       Loading…
     </div>
   );
   if (!user) return <Navigate to="/login" replace />;
+  // A signed-up-but-not-yet-approved user has an org_hierarchy row with
+  // approved: false — block them from the app until an admin approves.
+  if (profile && profile.approved === false) return <Navigate to="/pending-approval" replace />;
   return children;
 }
 
@@ -55,6 +62,10 @@ export default function App() {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+            <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
+            <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/pending-approval" element={<PendingApproval />} />
             <Route path="/" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
               <Route index element={<Dashboard />} />
               <Route path="contacts" element={<Contacts />} />
