@@ -502,6 +502,12 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
     founded_year: account.founded_year || '',
     ticker: account.ticker || '',
     parent_company: account.parent_company || '',
+    industry: account.industry || '',
+    country: account.country || '',
+    revenue_millions: account.revenue_millions || '',
+    employee_count: account.employee_count || '',
+    website: account.website || '',
+    headquarters: account.headquarters || '',
   });
   // ── Contact add / CSV import ──
   const [showAddContact, setShowAddContact] = useState(false);
@@ -640,6 +646,12 @@ setSaving(false);
     else updates.founded_year = null;
     updates.ticker = companyDetailsDraft.ticker || null;
     updates.parent_company = companyDetailsDraft.parent_company || null;
+    updates.industry = companyDetailsDraft.industry || null;
+    updates.country = companyDetailsDraft.country || null;
+    updates.revenue_millions = companyDetailsDraft.revenue_millions ? (parseFloat(companyDetailsDraft.revenue_millions) || null) : null;
+    updates.employee_count = companyDetailsDraft.employee_count ? (parseInt(companyDetailsDraft.employee_count) || null) : null;
+    updates.website = companyDetailsDraft.website || null;
+    updates.headquarters = companyDetailsDraft.headquarters || null;
     await patch(updates);
     setEditingCompanyDetails(false);
   }
@@ -977,7 +989,6 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
     { key: 'overview',  label: 'Overview'  },
     { key: 'contacts',  label: `Contacts${contacts.length > 0 ? ` (${contacts.length})` : ''}` },
     { key: 'techstack', label: 'Tech Stack' },
-    { key: 'notes',     label: 'Notes'     },
   ];
 
   return (
@@ -1052,13 +1063,147 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
         </div>
       </div>
 
-      {/* TAB CONTENT */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+      {/* MAIN BODY: sidebar + tab content */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
-        {/* OVERVIEW TAB */}
-        {activeTab === 'overview' && (
-          <div style={{ maxWidth: 860 }}>
-            {/* Metric cards */}
+        {/* SIDEBAR */}
+        <aside style={{ width: 300, flexShrink: 0, borderRight: '1px solid #e5e7eb', overflowY: 'auto', padding: '20px 16px', background: '#fafafa' }}>
+
+          {/* Company details panel */}
+          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Company details</div>
+              {!editingCompanyDetails && (
+                <button onClick={() => { setCompanyDetailsDraft({
+                  founded_year: data.founded_year || '', ticker: data.ticker || '', parent_company: data.parent_company || '',
+                  industry: data.industry || '', country: data.country || '', revenue_millions: data.revenue_millions || '',
+                  employee_count: data.employee_count || '', website: data.website || '', headquarters: data.headquarters || '',
+                }); setEditingCompanyDetails(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#9ca3af' }}>✏️</button>
+              )}
+            </div>
+            {editingCompanyDetails ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[
+                  { key: 'industry', label: 'Industry' },
+                  { key: 'country', label: 'Country' },
+                  { key: 'revenue_millions', label: 'Revenue ($M)' },
+                  { key: 'employee_count', label: 'Employees' },
+                  { key: 'website', label: 'Website' },
+                  { key: 'headquarters', label: 'Headquarters' },
+                  { key: 'founded_year', label: 'Founded year' },
+                  { key: 'ticker', label: 'Ticker' },
+                  { key: 'parent_company', label: 'Parent company' },
+                ].map(f => (
+                  <div key={f.key}>
+                    <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 2 }}>{f.label}</div>
+                    <input value={companyDetailsDraft[f.key]} onChange={e => setCompanyDetailsDraft(d => ({ ...d, [f.key]: e.target.value }))}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                  <button onClick={saveCompanyDetails} style={{ flex: 1, padding: '7px 0', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Save</button>
+                  <button onClick={() => setEditingCompanyDetails(false)} style={{ flex: 1, padding: '7px 0', background: '#f0f0f0', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: '#374151' }}>
+                <div>🏭 {data.industry || <span style={{ color: '#bbb' }}>No industry</span>}</div>
+                <div>📍 {data.country || <span style={{ color: '#bbb' }}>No country</span>}</div>
+                <div>💰 {data.revenue_millions ? `$${Number(data.revenue_millions).toLocaleString()}M` : <span style={{ color: '#bbb' }}>No revenue</span>}</div>
+                <div>👥 {data.employee_count ? Number(data.employee_count).toLocaleString() : <span style={{ color: '#bbb' }}>No employee count</span>}</div>
+                <div>🌐 {data.website || <span style={{ color: '#bbb' }}>No website</span>}</div>
+                <div>🏢 {data.headquarters || <span style={{ color: '#bbb' }}>No headquarters</span>}</div>
+              </div>
+            )}
+          </div>
+
+          {/* Record details panel */}
+          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Record details</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, color: '#374151' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#9ca3af' }}>Score</span>
+                <button onClick={() => setShowScoreBreakdown(true)} style={{ padding: '3px 10px', borderRadius: 6, background: sc.bg, color: sc.color, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>{score} ▾</button>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#9ca3af' }}>Created</span>
+                <span>{data.created_at ? new Date(data.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#9ca3af' }}>Last updated</span>
+                <span>{data.updated_at ? new Date(data.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Contacts panel */}
+          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Contacts</div>
+              <button onClick={() => setActiveTab('contacts')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2563eb', fontWeight: 600 }}>View all</button>
+            </div>
+            {contacts.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#bbb' }}>No contacts linked</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {contacts.slice(0, 5).map(c => {
+                  const fullName = (c.first_name + ' ' + (c.last_name || '')).trim();
+                  return (
+                    <div key={c.id} onClick={() => setActiveTab('contacts')} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                      <div style={{ width: 24, height: 24, borderRadius: '50%', background: avatarColor(fullName), color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                        {getInitials(fullName)}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fullName}</div>
+                        <div style={{ fontSize: 10, color: '#9ca3af', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title || ''}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {contacts.length > 5 && (
+                  <div style={{ fontSize: 11, color: '#9ca3af' }}>+{contacts.length - 5} more</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Notes panel */}
+          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.4px' }}>📝 Notes</div>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 12 }}>Shared across every rep working this account</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              <textarea value={newCompanyNoteText} onChange={e => setNewCompanyNoteText(e.target.value)}
+                placeholder="Add intel: tech stack, deal status, pain points, next steps, objections, key stakeholders…" rows={3}
+                style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12, resize: 'vertical', fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }} />
+              <button onClick={addCompanyNote} disabled={!newCompanyNoteText.trim() || savingCompanyNote}
+                style={{ padding: '7px 0', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: !newCompanyNoteText.trim() ? 0.5 : 1 }}>
+                {savingCompanyNote ? 'Saving…' : 'Add'}
+              </button>
+            </div>
+            {companyNotesList.length === 0 ? (
+              <p style={{ fontSize: 12, color: '#bbb', textAlign: 'center', padding: '12px 0' }}>No notes yet</p>
+            ) : companyNotesList.map(n => (
+              <div key={n.id} style={{ padding: '10px 12px', borderRadius: 8, marginBottom: 8, background: '#f8f8f6', borderLeft: '3px solid #e0e0e0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#555' }}>{n.profiles?.full_name || 'Unknown'}</span>
+                  <span style={{ fontSize: 10, color: '#bbb' }}>{n.created_at ? new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
+                </div>
+                <p style={{ fontSize: 12, color: '#333', margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{n.body}</p>
+              </div>
+            ))}
+          </div>
+
+        </aside>
+
+        {/* TAB CONTENT */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+
+          {/* OVERVIEW TAB */}
+          {activeTab === 'overview' && (
+            <div style={{ maxWidth: 860 }}>
+              {/* Company insights header */}
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#111', marginBottom: 16 }}>📊 Company Insights</div>
+              {/* Metric cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
               {[
                 { label: 'Total Contacts', value: contacts.length, color: '#111', bg: '#fff', border: '#e5e7eb', icon: '👤' },
@@ -1476,36 +1621,8 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
           </div>
         )}
 
-        {/* NOTES TAB */}
-        {activeTab === 'notes' && (
-          <div style={{ maxWidth: 860 }}>
-            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '18px 20px' }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 4 }}>📝 Company Notes</div>
-              <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 16 }}>Shared across every rep working this account — same notes shown on each contact's Company Notes tab</div>
-              <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-                <textarea value={newCompanyNoteText} onChange={e => setNewCompanyNoteText(e.target.value)}
-                  placeholder="Add intel: tech stack, deal status, pain points, next steps, objections, key stakeholders…" rows={4}
-                  style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13, resize: 'vertical', fontFamily: 'inherit', outline: 'none' }} />
-                <button onClick={addCompanyNote} disabled={!newCompanyNoteText.trim() || savingCompanyNote}
-                  style={{ padding: '10px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', alignSelf: 'flex-end', opacity: !newCompanyNoteText.trim() ? 0.5 : 1 }}>
-                  {savingCompanyNote ? 'Saving…' : 'Add'}
-                </button>
-              </div>
-              {companyNotesList.length === 0 ? (
-                <p style={{ fontSize: 13, color: '#bbb', textAlign: 'center', padding: '24px 0' }}>No notes yet</p>
-              ) : companyNotesList.map(n => (
-                <div key={n.id} style={{ padding: '12px 14px', borderRadius: 8, marginBottom: 8, background: '#f8f8f6', borderLeft: '3px solid #e0e0e0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>{n.profiles?.full_name || 'Unknown'}</span>
-                    <span style={{ fontSize: 11, color: '#bbb' }}>{n.created_at ? new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
-                  </div>
-                  <p style={{ fontSize: 13, color: '#333', margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{n.body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
+    </div>
 
       
       {/* ADD CONTACT MODAL */}
