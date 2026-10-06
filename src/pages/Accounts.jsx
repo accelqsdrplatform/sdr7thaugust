@@ -869,9 +869,14 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
       if (signalsChanged) updates.signals = newSignals;
 
       const ts = new Date().toISOString();
-      updates.research_meta = { ...(data.research_meta || {}), full: ts };
+      const sectionMeta = {};
+      RESEARCH_DEFAULTS.forEach(rd => { if (newResearch[rd.key]) sectionMeta[rd.key] = ts; });
+      updates.research_meta = { ...(data.research_meta || {}), full: ts, ...sectionMeta };
       await patch(updates);
       await syncResearchAcrossDomain('full', newResearch, ts);
+      for (const key of Object.keys(sectionMeta)) {
+        await syncResearchAcrossDomain(key, { [key]: newResearch[key] }, ts);
+      }
     } catch(e) { console.error('runFullAIResearch error:', e); }
     setAiResearching(false);
   }
