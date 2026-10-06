@@ -1110,7 +1110,7 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                 <div>🏭 {data.industry || <span style={{ color: '#bbb' }}>No industry</span>}</div>
                 <div>📍 {data.country || <span style={{ color: '#bbb' }}>No country</span>}</div>
                 <div>💰 {data.revenue_millions ? `$${Number(data.revenue_millions).toLocaleString()}M` : <span style={{ color: '#bbb' }}>No revenue</span>}</div>
-                <div>👥 {data.employee_count ? Number(data.employee_count).toLocaleString() : <span style={{ color: '#bbb' }}>No employee count</span>}</div>
+                <div>👥 {data.employee_count ? (Number.isFinite(Number(data.employee_count)) ? Number(data.employee_count).toLocaleString() : data.employee_count) : <span style={{ color: '#bbb' }}>No employee count</span>}</div>
                 <div>🌐 {data.website || <span style={{ color: '#bbb' }}>No website</span>}</div>
                 <div>🏢 {data.headquarters || <span style={{ color: '#bbb' }}>No headquarters</span>}</div>
               </div>
