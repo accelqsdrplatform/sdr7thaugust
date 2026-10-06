@@ -1814,6 +1814,7 @@ function ResearchCard({ icon, label, value, generating, locked, lockedUntil, onG
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   useEffect(() => { setDraft(value); }, [value]);
+  const hasContent = !!(value && String(value).trim());
 
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
@@ -1823,11 +1824,11 @@ function ResearchCard({ icon, label, value, generating, locked, lockedUntil, onG
         {onRemove && (
           <button onClick={onRemove} style={{ fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>✕</button>
         )}
-        <button onClick={onGenerate} disabled={generating || locked} title={locked ? `Available again on ${lockedUntil}` : undefined} style={{
-          padding: '4px 12px', background: (generating || locked) ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-          color: (generating || locked) ? '#9ca3af' : '#fff', borderRadius: 7, fontSize: 11, fontWeight: 600, border: 'none',
-          cursor: generating ? 'wait' : (locked ? 'not-allowed' : 'pointer'),
-        }}>{generating ? '⏳ Generating…' : locked ? `🔒 ${lockedUntil}` : '✨ Generate'}</button>
+        <button onClick={onGenerate} disabled={generating || locked || hasContent} title={locked ? `Available again on ${lockedUntil}` : hasContent ? 'Already generated — edit or remove to regenerate' : undefined} style={{
+          padding: '4px 12px', background: (generating || locked || hasContent) ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+          color: (generating || locked || hasContent) ? '#9ca3af' : '#fff', borderRadius: 7, fontSize: 11, fontWeight: 600, border: 'none',
+          cursor: generating ? 'wait' : ((locked || hasContent) ? 'not-allowed' : 'pointer'),
+        }}>{generating ? '⏳ Generating…' : locked ? `🔒 ${lockedUntil}` : hasContent ? '✓ Generated' : '✨ Generate'}</button>
       </div>
       <div style={{ padding: '12px 16px', minHeight: 70 }}>
         {editing ? (
