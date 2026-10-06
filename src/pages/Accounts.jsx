@@ -554,6 +554,7 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const fullLockMs = msUntilUnlock(data.research_meta?.full);
   const fullLocked = fullLockMs > 0;
   const fullUnlockDate = fullLocked ? formatUnlockDate(data.research_meta.full) : null;
+  const allResearchGenerated = RESEARCH_DEFAULTS.every(r => research[r.key] && String(research[r.key]).trim());
 
   async function findDomainSiblings() {
     const domain = normalizeDomain(data.website);
@@ -1341,8 +1342,8 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
             {/* Research cards */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>Research Notes</div>
-              <button onClick={generateAll} style={{ padding: '7px 18px', background: 'linear-gradient(135deg, #7c3aed, #2563eb)', color: '#fff', borderRadius: 9, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer' }}>
-                ✨ Generate All Missing
+              <button onClick={generateAll} disabled={allResearchGenerated} style={{ padding: '7px 18px', background: allResearchGenerated ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #2563eb)', color: allResearchGenerated ? '#9ca3af' : '#fff', borderRadius: 9, fontSize: 12, fontWeight: 600, border: 'none', cursor: allResearchGenerated ? 'not-allowed' : 'pointer' }}>
+                {allResearchGenerated ? '✓ All Generated' : '✨ Generate All Missing'}
               </button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
