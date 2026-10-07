@@ -51,7 +51,7 @@ function formatUnlockDate(ts) {
   return unlockAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 const COMMON_ENTERPRISE_APPS = ['SAP','Oracle','Workday','ServiceNow','Salesforce','Microsoft Dynamics','SAP S/4HANA','Oracle EBS','PeopleSoft','Guidewire','Siebel','Veeva'];
-const PITCH_TYPES = ['Salesforce','ServiceNow','SAP','Workday','Oracle','MS Dynamics','Pega','nCino','Coupa','Web','Mobile','API'];
+const PITCH_TYPES = ['Salesforce','ServiceNow','SAP','Workday','Oracle','MS Dynamics','Pega','nCino','Coupa','Web','Mobile','API','Selenium','Playwright','Cypress','Testing of AI/Agents'];
 const PERSONA_LIST = ['Executive / Economic Buyer','QA / Quality Leader','Engineering Leader','Automation / Technical Expert','DevOps / Transformation / Architecture','Practitioner / End User'];
 const STAGE_COLORS = {
   Fresh: { bg: '#dbeafe', color: '#1d4ed8' },
