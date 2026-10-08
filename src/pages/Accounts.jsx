@@ -531,6 +531,8 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const [noteDraft, setNoteDraft] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [enrichingContact, setEnrichingContact] = useState(null);
+  const [selectedEnrich, setSelectedEnrich] = useState(new Set());
+  const [bulkEnriching, setBulkEnriching] = useState(null);
   const [liDraft, setLiDraft] = useState('');
   const [savedLinkedInUrls, setSavedLinkedInUrls] = useState({});
 
@@ -991,6 +993,39 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
     finally { setEnrichingContact(null); }
   }
 
+  function toggleEnrichSelect(id) {
+    setSelectedEnrich(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkEnrichSelected() {
+    const ids = [...selectedEnrich];
+    if (ids.length === 0) return;
+    let enrichedCount = 0, noMatchCount = 0, failedCount = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const c = contacts.find(x => x.id === ids[i]);
+      if (!c) continue;
+      setBulkEnriching(`${i + 1}/${ids.length}`);
+      setEnrichingContact(c.id);
+      try {
+        const { data: result, error: fnErr } = await supabase.functions.invoke('enrich-contact', {
+          body: { contact_id: c.id, first_name: c.first_name, last_name: c.last_name, company: c.company || account?.name || '', account_id: account?.id }
+        });
+        if (fnErr || result?.error) { failedCount++; }
+        else if (result.found) { enrichedCount++; }
+        else { noMatchCount++; }
+      } catch { failedCount++; }
+    }
+    setEnrichingContact(null);
+    setBulkEnriching(null);
+    setSelectedEnrich(new Set());
+    onUpdate();
+    alert(`Bulk enrich done: ${enrichedCount} enriched, ${noMatchCount} no match, ${failedCount} failed`);
+  }
+
   const TABS = [
     { key: 'overview',  label: 'Overview'  },
     { key: 'contacts',  label: `Contacts${contacts.length > 0 ? ` (${contacts.length})` : ''}` },
@@ -1390,6 +1425,11 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
         {activeTab === 'contacts' && (
           <div style={{ maxWidth: 860 }}>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 16 }}>
+              {selectedEnrich.size > 0 && (
+                <button onClick={bulkEnrichSelected} disabled={!!bulkEnriching} style={{ padding: '7px 14px', background: bulkEnriching ? '#ede9fe' : '#7c3aed', color: '#fff', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: bulkEnriching ? 'not-allowed' : 'pointer', border: 'none' }}>
+                  {bulkEnriching ? `Enriching… ${bulkEnriching}` : `✨ Enrich Selected (${selectedEnrich.size})`}
+                </button>
+              )}
               <button onClick={() => setShowCsvImport(true)} style={{ padding: '7px 14px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>⬆️ Import CSV</button>
               <button onClick={() => setShowAddContact(true)} style={{ padding: '7px 14px', background: '#2563eb', color: '#fff', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none' }}>+ Add Contact</button>
             </div>
@@ -1405,6 +1445,10 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                   const initColor = avatarColor((c.first_name + ' ' + (c.last_name || '')).trim());
                   return (
                     <div key={c.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+{(!c.email || !c.linkedin_url) && (
+                        <input type="checkbox" checked={selectedEnrich.has(c.id)} onChange={() => toggleEnrichSelect(c.id)}
+                          style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} title="Select for bulk enrich" />
+                      )}
                       <div style={{ width: 40, height: 40, borderRadius: '50%', background: initColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
                         {getInitials((c.first_name + ' ' + (c.last_name || '')).trim())}
                       </div>
