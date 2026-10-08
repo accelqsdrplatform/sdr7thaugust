@@ -9,6 +9,22 @@ async function callApollo(action, params = {}) {
   return data;
 }
 
+function normalizeDomain(url) {
+  if (!url) return '';
+  return url.trim().toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+    .split('?')[0];
+}
+
+function extractCompanyInfo(c) {
+  const org = c.organization || {};
+  const name = org.name || c.organization_name || '';
+  const domain = normalizeDomain(org.primary_domain || org.website_url || org.domain || '');
+  return { name, domain };
+}
+
 const SENIORITY_OPTIONS = [
   { v: 'owner', l: 'Owner' }, { v: 'founder', l: 'Founder' }, { v: 'c_suite', l: 'C-Suite' },
   { v: 'partner', l: 'Partner' }, { v: 'vp', l: 'VP' }, { v: 'head', l: 'Head' },
@@ -42,6 +58,9 @@ export default function ApolloImport() {
   const [importResults, setImportResults] = useState(null);
   const [page, setPage] = useState(1);
   const [totalContacts, setTotalContacts] = useState(0);
+  const [newCompanies, setNewCompanies] = useState([]);
+  const [selectedNewCompanies, setSelectedNewCompanies] = useState(new Set());
+  const [pendingAssignTo, setPendingAssignTo] = useState(null);
   const [mode, setMode] = useState('list');
   const [filters, setFilters] = useState({
     titles: '', seniorities: [], personLocations: '', orgLocations: '',
@@ -142,12 +161,74 @@ export default function ApolloImport() {
     setLoading(false);
   }
 
+  async function fetchAccountMaps(assignTo) {
+    const { data: ownedAccounts } = await supabase.from('accounts').select('id, name, website').eq('owner_id', assignTo);
+    const byDomain = {}, byName = {};
+    (ownedAccounts || []).forEach(a => {
+      if (a.website) { const d = normalizeDomain(a.website); if (d) byDomain[d] = a.id; }
+      if (a.name) byName[a.name.toLowerCase()] = a.id;
+    });
+    return { byDomain, byName };
+  }
+
   async function runImport() {
-    setStep('importing');
+    setStep('checking-accounts');
     const assignTo = isOwner ? profile?.user_id : selectedSdr;
-    const { data: allAccounts } = await supabase.from('accounts').select('id, name');
-    const accountMap = {};
-    (allAccounts || []).forEach(a => { accountMap[a.name?.toLowerCase()] = a.id; });
+    setPendingAssignTo(assignTo);
+    const dupSet = new Set(duplicates.map(d => d.email));
+    const toImport = contacts.filter(c => !dupSet.has(c.email) || duplicateAction[c.email] === 'overwrite');
+
+    const { byDomain, byName } = await fetchAccountMaps(assignTo);
+
+    // Find companies in this import that don't match an existing account
+    // (by domain first, falling back to name) — same review-before-create
+    // pattern as the CSV import flow.
+    const seen = new Set();
+    const toCreate = [];
+    toImport.forEach(c => {
+      const { name, domain } = extractCompanyInfo(c);
+      if (!name) return;
+      const key = domain || name.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      const matchedId = (domain && byDomain[domain]) || byName[name.toLowerCase()];
+      if (!matchedId) toCreate.push({ name, domain, website: domain ? ('https://' + domain) : '' });
+    });
+
+    if (toCreate.length > 0) {
+      setNewCompanies(toCreate);
+      setSelectedNewCompanies(new Set(toCreate.map(c => c.name)));
+      setStep('reviewing-accounts');
+    } else {
+      await doImport(assignTo, byDomain, byName);
+    }
+  }
+
+  async function confirmAccountsAndImport() {
+    const assignTo = pendingAssignTo;
+    const toCreate = newCompanies.filter(c => selectedNewCompanies.has(c.name));
+    let { byDomain, byName } = await fetchAccountMaps(assignTo);
+    if (toCreate.length > 0) {
+      const { data: created } = await supabase.from('accounts').upsert(
+        toCreate.map(c => ({ name: c.name, website: c.website || null, owner_id: assignTo })),
+        { onConflict: 'owner_id,name' }
+      ).select('id, name, website');
+      (created || []).forEach(a => {
+        if (a.website) { const d = normalizeDomain(a.website); if (d) byDomain[d] = a.id; }
+        if (a.name) byName[a.name.toLowerCase()] = a.id;
+      });
+    }
+    await doImport(assignTo, byDomain, byName);
+  }
+
+  async function skipAccountsAndImport() {
+    const assignTo = pendingAssignTo;
+    const { byDomain, byName } = await fetchAccountMaps(assignTo);
+    await doImport(assignTo, byDomain, byName);
+  }
+
+  async function doImport(assignTo, byDomain, byName) {
+    setStep('importing');
     const dupSet = new Set(duplicates.map(d => d.email));
     const toImport = contacts.filter(c => !dupSet.has(c.email) || duplicateAction[c.email] === 'overwrite');
     setImportProgress({ done: 0, total: toImport.length });
@@ -162,8 +243,8 @@ export default function ApolloImport() {
             email = en?.person?.email || null;
           } catch (_) {}
         }
-        const companyLower = c.organization?.name?.toLowerCase();
-        const accountId = companyLower ? (accountMap[companyLower] || null) : null;
+        const { name: companyName, domain } = extractCompanyInfo(c);
+        const accountId = (domain && byDomain[domain]) || (companyName && byName[companyName.toLowerCase()]) || null;
         const row = { first_name: c.first_name || '', last_name: c.last_name || '', email: email || null, title: c.title || null, company: c.organization?.name || null, linkedin_url: c.linkedin_url || null, owner_id: assignTo, status: 'Fresh', account_id: accountId, source: mode === 'search' ? 'apollo_search' : 'apollo_import' };
         if (c.email && duplicateAction[c.email] === 'overwrite') {
           await supabase.from('contacts').update(row).eq('email', c.email);
@@ -391,6 +472,38 @@ export default function ApolloImport() {
             Import {toImportCount} contacts
           </button>
         </>
+      )}
+      {step==='checking-accounts'&&(
+        <div style={{ background:'#fff',border:'0.5px solid #e8e8e4',borderRadius:12,padding:32,textAlign:'center' }}>
+          <div style={{ fontSize:14,color:'#888' }}>Checking accounts…</div>
+        </div>
+      )}
+      {step==='reviewing-accounts'&&(
+        <div style={{ background:'#fff',border:'0.5px solid #e8e8e4',borderRadius:12,padding:20,marginBottom:16 }}>
+          <div style={{ fontSize:14,fontWeight:600,color:'#111',marginBottom:6 }}>New companies found</div>
+          <div style={{ fontSize:12,color:'#888',marginBottom:14 }}>
+            {newCompanies.length} compan{newCompanies.length===1?'y':'ies'} from this import don't have an account yet — matched automatically by domain where available. Select which ones to create:
+          </div>
+          <div style={{ maxHeight:260,overflowY:'auto',border:'1px solid #e5e7eb',borderRadius:8,marginBottom:16 }}>
+            {newCompanies.map(nc=>(
+              <label key={nc.name} style={{ display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderBottom:'1px solid #f3f4f6',cursor:'pointer',fontSize:13 }}>
+                <input type="checkbox" checked={selectedNewCompanies.has(nc.name)}
+                  onChange={()=>setSelectedNewCompanies(prev=>{const s=new Set(prev); s.has(nc.name)?s.delete(nc.name):s.add(nc.name); return s;})}
+                  style={{ width:15,height:15,cursor:'pointer' }} />
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:500,color:'#111' }}>{nc.name}</div>
+                  {nc.domain && <div style={{ fontSize:11,color:'#9ca3af' }}>{nc.domain}</div>}
+                </div>
+              </label>
+            ))}
+          </div>
+          <div style={{ display:'flex',gap:10 }}>
+            <button onClick={skipAccountsAndImport} style={{ padding:'9px 18px',background:'#f5f5f3',color:'#555',border:'0.5px solid #e8e8e4',borderRadius:8,fontSize:13,cursor:'pointer' }}>Skip — import contacts only</button>
+            <button onClick={confirmAccountsAndImport} style={{ padding:'9px 18px',background:'#2563eb',color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer' }}>
+              Create {selectedNewCompanies.size} account{selectedNewCompanies.size!==1?'s':''} & import
+            </button>
+          </div>
+        </div>
       )}
       {step==='importing'&&(
         <div style={{ background:'#fff',border:'0.5px solid #e8e8e4',borderRadius:12,padding:32,textAlign:'center' }}>
