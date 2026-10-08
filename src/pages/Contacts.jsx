@@ -51,6 +51,8 @@ export default function Contacts() {
   const [pitchTypes, setPitchTypes]   = useState([]);
   const [personas, setPersonas]       = useState([]);
   const [companies, setCompanies]     = useState([]);
+  const [sources, setSources]         = useState([]);
+  const [countries, setCountries]     = useState([]);
   const [freshCount, setFreshCount]     = useState(0);
   const [activeCount, setActiveCount]   = useState(0);
   const [bouncedCount, setBouncedCount] = useState(0);
@@ -69,6 +71,8 @@ export default function Contacts() {
   const [dupeMerging, setDupeMerging]         = useState(false);
   const [companyFilter, setCompanyFilter]     = useState('');
   const [responseFilter, setResponseFilter]   = useState('');
+  const [sourceFilter, setSourceFilter]       = useState('');
+  const [countryFilter, setCountryFilter]     = useState('');
   const [dateAddedFilter, setDateAddedFilter] = useState('');
   const [lastReachedFilter, setLastReachedFilter] = useState('');
   const [dateAddedFrom, setDateAddedFrom]     = useState('');
@@ -83,20 +87,22 @@ export default function Contacts() {
 
   useEffect(() => { fetchLists(); }, []);
 
-  useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo]);
+  useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo]);
 
-  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, page]);
+  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, page]);
 
   async function fetchFilterOptions() {
     const { data } = await supabase
       .from('contacts')
-      .select('account_id, pitch_type, persona, company, status, accounts(industry)')
+      .select('account_id, pitch_type, persona, company, status, source, accounts(industry, country)')
       .eq('owner_id', user.id);
     const rows = data || [];
     setIndustries([...new Set(rows.map(c => c.accounts?.industry || '').filter(Boolean))].sort());
     setPitchTypes([...new Set(rows.map(c => c.pitch_type).filter(Boolean))].sort());
     setPersonas([...new Set(rows.map(c => c.persona).filter(Boolean))].sort());
     setCompanies([...new Set(rows.map(c => c.company).filter(Boolean))].sort());
+    setSources([...new Set(rows.map(c => c.source).filter(Boolean))].sort());
+    setCountries([...new Set(rows.map(c => c.accounts?.country || '').filter(Boolean))].sort());
     setFreshCount(rows.filter(c => c.status === 'Fresh').length);
     setActiveCount(rows.filter(c => !['bounced','unsubscribed','lost'].includes(c.status)).length);
     setBouncedCount(rows.filter(c => c.status === 'bounced').length);
@@ -117,8 +123,11 @@ export default function Contacts() {
       q = q.or(`first_name.ilike.${s},last_name.ilike.${s},email.ilike.${s},company.ilike.${s}`);
     }
 
-    if (industryFilter) {
-      const { data: accRows } = await supabase.from('accounts').select('id').eq('industry', industryFilter);
+    if (industryFilter || countryFilter) {
+      let accQ = supabase.from('accounts').select('id');
+      if (industryFilter) accQ = accQ.eq('industry', industryFilter);
+      if (countryFilter) accQ = accQ.eq('country', countryFilter);
+      const { data: accRows } = await accQ;
       const accIds = (accRows || []).map(a => a.id);
       if (accIds.length > 0) {
         q = q.in('account_id', accIds);
@@ -135,6 +144,7 @@ export default function Contacts() {
     if (personaFilter)   q = q.eq('persona', personaFilter);
     if (companyFilter)   q = q.eq('company', companyFilter);
     if (responseFilter)  q = q.eq('response_type', responseFilter);
+    if (sourceFilter)    q = q.eq('source', sourceFilter);
     if (hasEmailFilter === 'yes') q = q.not('email', 'is', null);
     if (hasEmailFilter === 'no')  q = q.is('email', null);
 
@@ -291,7 +301,7 @@ export default function Contacts() {
   // Effective industry: contact's own industry OR inherited from account
   function effectiveIndustry(c) { return c.accounts?.industry || ''; }
 
-  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo].filter(Boolean).length;
+  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo].filter(Boolean).length;
 
   const freshSelected = [...selected].filter(id => {
     const c = contacts.find(x => x.id === id);
@@ -450,6 +460,20 @@ export default function Contacts() {
           <option value="negative">Negative</option>
           <option value="not_interested">Not Interested</option>
         </select>
+        {sources.length > 0 && (
+          <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (sourceFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: sourceFilter ? '#eff6ff' : '#fff', color: sourceFilter ? '#1d4ed8' : '#555' }}>
+            <option value="">All Sources</option>
+            {sources.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
+        {countries.length > 0 && (
+          <select value={countryFilter} onChange={e => setCountryFilter(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (countryFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: countryFilter ? '#eff6ff' : '#fff', color: countryFilter ? '#1d4ed8' : '#555' }}>
+            <option value="">All Countries</option>
+            {countries.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <select value={dateAddedFilter} onChange={e => setDateAddedFilter(e.target.value)}
             style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (dateAddedFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: dateAddedFilter ? '#eff6ff' : '#fff', color: dateAddedFilter ? '#1d4ed8' : '#555' }}>
