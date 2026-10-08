@@ -41,7 +41,7 @@ const EMAIL_STATUS_OPTIONS = [
 ];
 
 export default function ApolloImport() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const isOwner = profile?.role === 'owner';
   const [step, setStep] = useState('list');
   const [lists, setLists] = useState([]);
@@ -173,7 +173,7 @@ export default function ApolloImport() {
 
   async function runImport() {
     setStep('checking-accounts');
-    const assignTo = isOwner ? profile?.id : selectedSdr;
+    const assignTo = isOwner ? user?.id : selectedSdr;
     setPendingAssignTo(assignTo);
     const dupSet = new Set(duplicates.map(d => d.email));
     const toImport = contacts.filter(c => !dupSet.has(c.email) || duplicateAction[c.email] === 'overwrite');
