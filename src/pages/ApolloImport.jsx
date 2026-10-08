@@ -173,7 +173,7 @@ export default function ApolloImport() {
 
   async function runImport() {
     setStep('checking-accounts');
-    const assignTo = isOwner ? profile?.user_id : selectedSdr;
+    const assignTo = isOwner ? profile?.id : selectedSdr;
     setPendingAssignTo(assignTo);
     const dupSet = new Set(duplicates.map(d => d.email));
     const toImport = contacts.filter(c => !dupSet.has(c.email) || duplicateAction[c.email] === 'overwrite');
