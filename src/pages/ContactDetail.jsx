@@ -217,9 +217,19 @@ export default function ContactDetail() {
       actor_id: user.id, contact_id: id,
       activity_type: 'stage_advanced', details: { from: contact.status, to: next }
     });
+    // Advancing the stage here has no composed draft (unlike the Follow-up
+    // Queue's AI-draft flow), but it still represents a real outreach touch —
+    // log it so Email History / the Emails tab count stays accurate instead
+    // of silently missing touches made from this page.
+    await supabase.from('emails').insert({
+      contact_id: id, owner_id: user.id, stage: contact.status,
+      subject: '(Logged via stage advance on Contact Detail — no draft composed here)',
+      body: '', direction: 'outbound', sent_at: new Date().toISOString(),
+    });
     setContact(c => ({ ...c, ...update }));
     setAdvancing(false);
     fetchTimeline();
+    fetchEmails();
   }
 
   async function markBounced() {
