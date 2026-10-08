@@ -370,25 +370,11 @@ export default function Contacts() {
             style={{ padding: '8px 14px', background: '#fff', color: '#7c3aed', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid #ddd8fe' }}>
             Find Duplicates
           </button>
-          <button
-            onClick={() => setShowClearConfirm(true)}
-            style={{ padding: '8px 14px', background: '#fff', color: '#dc2626', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid #fecaca' }}>
-            Clear all
-          </button>
           <UploadCSV userId={user.id} onDone={fetchContacts} />
         </div>
       </div>
 
       {/* Confirmations */}
-      {showClearConfirm && (
-        <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 13, color: '#991b1b' }}>Permanently delete <strong>all contacts</strong>? This cannot be undone.</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setShowClearConfirm(false)} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid #e0e0e0', background: '#fff', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
-            <button onClick={clearAllContacts} style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: '#dc2626', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Delete all</button>
-          </div>
-        </div>
-      )}
       {deleteConfirm && (
         <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: 13, color: '#991b1b' }}>Delete <strong>{deleteConfirm.name}</strong>?</span>
