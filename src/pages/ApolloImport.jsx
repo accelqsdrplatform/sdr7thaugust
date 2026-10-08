@@ -9,6 +9,21 @@ async function callApollo(action, params = {}) {
   return data;
 }
 
+const SENIORITY_OPTIONS = [
+  { v: 'owner', l: 'Owner' }, { v: 'founder', l: 'Founder' }, { v: 'c_suite', l: 'C-Suite' },
+  { v: 'partner', l: 'Partner' }, { v: 'vp', l: 'VP' }, { v: 'head', l: 'Head' },
+  { v: 'director', l: 'Director' }, { v: 'manager', l: 'Manager' }, { v: 'senior', l: 'Senior' },
+  { v: 'entry', l: 'Entry' }, { v: 'intern', l: 'Intern' },
+];
+const HEADCOUNT_OPTIONS = [
+  { v: '1,10', l: '1-10' }, { v: '11,50', l: '11-50' }, { v: '51,200', l: '51-200' },
+  { v: '201,500', l: '201-500' }, { v: '501,1000', l: '501-1,000' }, { v: '1001,5000', l: '1,001-5,000' },
+  { v: '5001,10000', l: '5,001-10,000' }, { v: '10001,', l: '10,001+' },
+];
+const EMAIL_STATUS_OPTIONS = [
+  { v: 'verified', l: 'Verified' }, { v: 'likely_to_engage', l: 'Likely to Engage' }, { v: 'unavailable', l: 'Unavailable' },
+];
+
 export default function ApolloImport() {
   const { profile } = useAuth();
   const isSDR = profile?.role === 'sdr';
@@ -27,6 +42,13 @@ export default function ApolloImport() {
   const [importResults, setImportResults] = useState(null);
   const [page, setPage] = useState(1);
   const [totalContacts, setTotalContacts] = useState(0);
+  const [mode, setMode] = useState('list');
+  const [filters, setFilters] = useState({
+    titles: '', seniorities: [], personLocations: '', orgLocations: '',
+    headcounts: [], keywordTags: '', keywords: '', domains: '',
+    technologies: '', revenueMin: '', revenueMax: '', emailStatus: [],
+    foundedMin: '', foundedMax: '',
+  });
 
   useEffect(() => {
     async function init() {
@@ -66,6 +88,60 @@ export default function ApolloImport() {
     setLoading(false);
   }
 
+  function toggleMultiFilter(key, val) {
+    setFilters(f => {
+      const arr = f[key].includes(val) ? f[key].filter(x => x !== val) : [...f[key], val];
+      return { ...f, [key]: arr };
+    });
+  }
+
+  function buildSearchBody(pageNum) {
+    const body = { page: pageNum, per_page: 50 };
+    if (filters.titles.trim()) body.person_titles = filters.titles.split(',').map(s => s.trim()).filter(Boolean);
+    if (filters.seniorities.length) body.person_seniorities = filters.seniorities;
+    if (filters.personLocations.trim()) body.person_locations = filters.personLocations.split(',').map(s => s.trim()).filter(Boolean);
+    if (filters.orgLocations.trim()) body.organization_locations = filters.orgLocations.split(',').map(s => s.trim()).filter(Boolean);
+    if (filters.headcounts.length) body.organization_num_employees_ranges = filters.headcounts;
+    if (filters.keywordTags.trim()) body.q_organization_keyword_tags = filters.keywordTags.split(',').map(s => s.trim()).filter(Boolean);
+    if (filters.keywords.trim()) body.q_keywords = filters.keywords.trim();
+    if (filters.domains.trim()) body.q_organization_domains_list = filters.domains.split(',').map(s => s.trim()).filter(Boolean);
+    if (filters.technologies.trim()) body.currently_using_any_of_technology_uids = filters.technologies.split(',').map(s => s.trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
+    if (filters.emailStatus.length) body.contact_email_status = filters.emailStatus;
+    if (filters.revenueMin || filters.revenueMax) {
+      body.revenue_range = {};
+      if (filters.revenueMin) body.revenue_range.min = filters.revenueMin;
+      if (filters.revenueMax) body.revenue_range.max = filters.revenueMax;
+    }
+    if (filters.foundedMin || filters.foundedMax) {
+      body.organization_founded_year_range = {};
+      if (filters.foundedMin) body.organization_founded_year_range.min = parseInt(filters.foundedMin);
+      if (filters.foundedMax) body.organization_founded_year_range.max = parseInt(filters.foundedMax);
+    }
+    return body;
+  }
+
+  async function runSearch(pageNum = 1) {
+    setLoading(true); setError(null);
+    try {
+      const data = await callApollo('people_search', buildSearchBody(pageNum));
+      const fetched = data.people || [];
+      setContacts(fetched);
+      setTotalContacts(data.pagination?.total_entries || fetched.length);
+      setPage(pageNum);
+      const emails = fetched.filter(c => c.email).map(c => c.email.toLowerCase());
+      if (emails.length > 0) {
+        const { data: existing } = await supabase.from('contacts').select('email').in('email', emails);
+        const existingEmails = new Set((existing || []).map(c => c.email?.toLowerCase()));
+        const dups = fetched.filter(c => c.email && existingEmails.has(c.email.toLowerCase()));
+        setDuplicates(dups);
+        const def = {}; dups.forEach(d => { def[d.email] = 'skip'; });
+        setDuplicateAction(def);
+      } else { setDuplicates([]); setDuplicateAction({}); }
+      setStep('preview');
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+
   async function runImport() {
     setStep('importing');
     const assignTo = isSDR ? profile?.user_id : selectedSdr;
@@ -88,7 +164,7 @@ export default function ApolloImport() {
         }
         const companyLower = c.organization?.name?.toLowerCase();
         const accountId = companyLower ? (accountMap[companyLower] || null) : null;
-        const row = { first_name: c.first_name || '', last_name: c.last_name || '', email: email || null, title: c.title || null, company: c.organization?.name || null, linkedin_url: c.linkedin_url || null, owner_id: assignTo, status: 'Fresh', account_id: accountId, source: 'apollo_import' };
+        const row = { first_name: c.first_name || '', last_name: c.last_name || '', email: email || null, title: c.title || null, company: c.organization?.name || null, linkedin_url: c.linkedin_url || null, owner_id: assignTo, status: 'Fresh', account_id: accountId, source: mode === 'search' ? 'apollo_search' : 'apollo_import' };
         if (c.email && duplicateAction[c.email] === 'overwrite') {
           await supabase.from('contacts').update(row).eq('email', c.email);
         } else {
@@ -96,7 +172,7 @@ export default function ApolloImport() {
           if (inserted?.id) {
             await supabase.from('activity_log').insert({
               actor_id: profile?.id || null, contact_id: inserted.id, activity_type: 'contact_created',
-              details: { source: 'apollo_import' },
+              details: { source: mode === 'search' ? 'apollo_search' : 'apollo_import' },
             });
           }
         }
@@ -123,6 +199,12 @@ export default function ApolloImport() {
         </div>
       )}
       {(step === 'list' || step === 'preview') && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 16, background: '#f0f0ee', padding: 4, borderRadius: 10, width: 'fit-content' }}>
+          <button onClick={() => { setMode('list'); setStep('list'); setContacts([]); }} style={{ padding: '7px 16px', borderRadius: 7, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: mode === 'list' ? '#fff' : 'transparent', color: mode === 'list' ? '#111' : '#666', boxShadow: mode === 'list' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>From Saved List</button>
+          <button onClick={() => { setMode('search'); setStep('list'); setContacts([]); }} style={{ padding: '7px 16px', borderRadius: 7, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: mode === 'search' ? '#fff' : 'transparent', color: mode === 'search' ? '#111' : '#666', boxShadow: mode === 'search' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>Search Apollo (60+ filters)</button>
+        </div>
+      )}
+      {mode === 'list' && (step === 'list' || step === 'preview') && (
         <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 20, marginBottom: 16 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: '#111', marginBottom: 12 }}>Select Apollo List</div>
           {loading && step === 'list' ? <div style={{ color: '#aaa', fontSize: 13 }}>Loading lists from Apollo…</div> : (
@@ -137,6 +219,106 @@ export default function ApolloImport() {
               </button>
             </div>
           )}
+        </div>
+      )}
+      {mode === 'search' && (step === 'list' || step === 'preview') && (
+        <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 20, marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#111', marginBottom: 14 }}>Search Apollo's People Database</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 16 }}>
+            <div>
+              <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 5 }}>Job Titles (comma-separated)</label>
+              <input value={filters.titles} onChange={e => setFilters(f => ({ ...f, titles: e.target.value }))} placeholder="e.g. QA Director, VP Engineering"
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 5 }}>Person Location (comma-separated)</label>
+              <input value={filters.personLocations} onChange={e => setFilters(f => ({ ...f, personLocations: e.target.value }))} placeholder="e.g. United States, India"
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 5 }}>Company Location (comma-separated)</label>
+              <input value={filters.orgLocations} onChange={e => setFilters(f => ({ ...f, orgLocations: e.target.value }))} placeholder="e.g. California, UK"
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 5 }}>Industry / Keyword Tags (comma-separated)</label>
+              <input value={filters.keywordTags} onChange={e => setFilters(f => ({ ...f, keywordTags: e.target.value }))} placeholder="e.g. banking, insurance, fintech"
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 5 }}>Keywords (company description)</label>
+              <input value={filters.keywords} onChange={e => setFilters(f => ({ ...f, keywords: e.target.value }))} placeholder="e.g. test automation"
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 5 }}>Company Domains (comma-separated)</label>
+              <input value={filters.domains} onChange={e => setFilters(f => ({ ...f, domains: e.target.value }))} placeholder="e.g. salesforce.com"
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 5 }}>Technologies Used (comma-separated)</label>
+              <input value={filters.technologies} onChange={e => setFilters(f => ({ ...f, technologies: e.target.value }))} placeholder="e.g. Selenium, Salesforce"
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 5 }}>Revenue Min ($)</label>
+                <input value={filters.revenueMin} onChange={e => setFilters(f => ({ ...f, revenueMin: e.target.value }))} placeholder="0"
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 5 }}>Revenue Max ($)</label>
+                <input value={filters.revenueMax} onChange={e => setFilters(f => ({ ...f, revenueMax: e.target.value }))} placeholder="100000000"
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 5 }}>Founded After</label>
+                <input value={filters.foundedMin} onChange={e => setFilters(f => ({ ...f, foundedMin: e.target.value }))} placeholder="e.g. 2000"
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 5 }}>Founded Before</label>
+                <input value={filters.foundedMax} onChange={e => setFilters(f => ({ ...f, foundedMax: e.target.value }))} placeholder="e.g. 2020"
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+              </div>
+            </div>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 6 }}>Seniority</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {SENIORITY_OPTIONS.map(o => (
+                <button key={o.v} type="button" onClick={() => toggleMultiFilter('seniorities', o.v)}
+                  style={{ padding: '4px 11px', borderRadius: 20, border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                    background: filters.seniorities.includes(o.v) ? '#2563eb' : '#f0f0ee', color: filters.seniorities.includes(o.v) ? '#fff' : '#666' }}>{o.l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 6 }}>Company Headcount</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {HEADCOUNT_OPTIONS.map(o => (
+                <button key={o.v} type="button" onClick={() => toggleMultiFilter('headcounts', o.v)}
+                  style={{ padding: '4px 11px', borderRadius: 20, border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                    background: filters.headcounts.includes(o.v) ? '#2563eb' : '#f0f0ee', color: filters.headcounts.includes(o.v) ? '#fff' : '#666' }}>{o.l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 6 }}>Email Status</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {EMAIL_STATUS_OPTIONS.map(o => (
+                <button key={o.v} type="button" onClick={() => toggleMultiFilter('emailStatus', o.v)}
+                  style={{ padding: '4px 11px', borderRadius: 20, border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                    background: filters.emailStatus.includes(o.v) ? '#2563eb' : '#f0f0ee', color: filters.emailStatus.includes(o.v) ? '#fff' : '#666' }}>{o.l}</button>
+              ))}
+            </div>
+          </div>
+          <button onClick={() => runSearch(1)} disabled={loading}
+            style={{ padding: '9px 24px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+            {loading ? 'Searching…' : '🔍 Search Apollo'}
+          </button>
         </div>
       )}
       {step === 'preview' && contacts.length > 0 && (
@@ -162,9 +344,9 @@ export default function ApolloImport() {
               <span>Preview — {contacts.length} of {totalContacts} contacts</span>
               {totalContacts > 50 && (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <button disabled={page===1} onClick={()=>loadContacts(selectedList,page-1)} style={{ padding:'3px 10px',border:'1px solid #e0e0e0',borderRadius:6,fontSize:12,cursor:page===1?'not-allowed':'pointer',opacity:page===1?0.4:1 }}>Prev</button>
+                  <button disabled={page===1} onClick={()=>mode==='search'?runSearch(page-1):loadContacts(selectedList,page-1)} style={{ padding:'3px 10px',border:'1px solid #e0e0e0',borderRadius:6,fontSize:12,cursor:page===1?'not-allowed':'pointer',opacity:page===1?0.4:1 }}>Prev</button>
                   <span style={{ fontSize: 12, color: '#888' }}>Page {page}</span>
-                  <button disabled={contacts.length<50} onClick={()=>loadContacts(selectedList,page+1)} style={{ padding:'3px 10px',border:'1px solid #e0e0e0',borderRadius:6,fontSize:12,cursor:contacts.length<50?'not-allowed':'pointer',opacity:contacts.length<50?0.4:1 }}>Next</button>
+                  <button disabled={contacts.length<50} onClick={()=>mode==='search'?runSearch(page+1):loadContacts(selectedList,page+1)} style={{ padding:'3px 10px',border:'1px solid #e0e0e0',borderRadius:6,fontSize:12,cursor:contacts.length<50?'not-allowed':'pointer',opacity:contacts.length<50?0.4:1 }}>Next</button>
                 </div>
               )}
             </div>
