@@ -81,6 +81,7 @@ export default function Contacts() {
   const [dateAddedTo, setDateAddedTo]         = useState('');
   const [lastReachedFrom, setLastReachedFrom] = useState('');
   const [lastReachedTo, setLastReachedTo]     = useState('');
+  const [showFilters, setShowFilters]         = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -406,51 +407,73 @@ export default function Contacts() {
         </div>
       </div>
 
-      {/* Advanced filters */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        {industries.length > 0 && (
+      {/* Filters toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <button onClick={() => setShowFilters(v => !v)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1px solid ' + (showFilters ? '#2563eb' : '#e0e0e0'), background: showFilters ? '#eff6ff' : '#fff', color: showFilters ? '#1d4ed8' : '#555', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+          <span>{showFilters ? 'Hide Filters' : 'Show Filters'}</span>
+          {activeFilters > 0 && (
+            <span style={{ background: '#2563eb', color: '#fff', borderRadius: 10, fontSize: 11, fontWeight: 700, padding: '1px 7px' }}>{activeFilters}</span>
+          )}
+        </button>
+        {activeFilters > 0 && (
+          <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setListContactIds(new Set()); }}
+            style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+            Clear filters ({activeFilters})
+          </button>
+        )}
+        <span style={{ fontSize: 12, color: '#aaa' }}>{totalCount} contacts</span>
+      </div>
+
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+        {showFilters && (
+          <div style={{ width: 240, flexShrink: 0, background: '#fff', border: '1px solid #e8e8e4', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column' }}>
+            {industries.length > 0 && (
           <select value={industryFilter} onChange={e => setIndustryFilter(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (industryFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: industryFilter ? '#eff6ff' : '#fff', color: industryFilter ? '#1d4ed8' : '#555' }}>
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (industryFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: industryFilter ? '#eff6ff' : '#fff', color: industryFilter ? '#1d4ed8' : '#555' }}>
             <option value="">All Industries</option>
             {industries.map(i => <option key={i} value={i}>{i}</option>)}
           </select>
         )}
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '2px 0 6px' }}>Persona &amp; Pitch</div>
         {pitchTypes.length > 0 && (
           <select value={pitchTypeFilter} onChange={e => setPitchTypeFilter(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (pitchTypeFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: pitchTypeFilter ? '#eff6ff' : '#fff', color: pitchTypeFilter ? '#1d4ed8' : '#555' }}>
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (pitchTypeFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: pitchTypeFilter ? '#eff6ff' : '#fff', color: pitchTypeFilter ? '#1d4ed8' : '#555' }}>
             <option value="">All Pitch Types</option>
             {pitchTypes.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         )}
         {personas.length > 0 && (
           <select value={personaFilter} onChange={e => setPersonaFilter(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (personaFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: personaFilter ? '#eff6ff' : '#fff', color: personaFilter ? '#1d4ed8' : '#555' }}>
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (personaFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: personaFilter ? '#eff6ff' : '#fff', color: personaFilter ? '#1d4ed8' : '#555' }}>
             <option value="">All Personas</option>
             {personas.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         )}
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '2px 0 6px' }}>Lists</div>
         {lists.length > 0 && (
           <select value={listFilter} onChange={e => applyListFilter(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (listFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: listFilter ? '#eff6ff' : '#fff', color: listFilter ? '#1d4ed8' : '#555' }}>
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (listFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: listFilter ? '#eff6ff' : '#fff', color: listFilter ? '#1d4ed8' : '#555' }}>
             <option value="">All Lists</option>
             {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         )}
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '2px 0 6px' }}>Engagement</div>
         <select value={hasEmailFilter} onChange={e => setHasEmailFilter(e.target.value)}
-          style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (hasEmailFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: hasEmailFilter ? '#eff6ff' : '#fff', color: hasEmailFilter ? '#1d4ed8' : '#555' }}>
+          style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (hasEmailFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: hasEmailFilter ? '#eff6ff' : '#fff', color: hasEmailFilter ? '#1d4ed8' : '#555' }}>
           <option value="">Has Email: All</option>
           <option value="yes">Has Email</option>
           <option value="no">No Email</option>
         </select>
         {companies.length > 0 && (
           <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (companyFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: companyFilter ? '#eff6ff' : '#fff', color: companyFilter ? '#1d4ed8' : '#555', maxWidth: 180 }}>
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (companyFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: companyFilter ? '#eff6ff' : '#fff', color: companyFilter ? '#1d4ed8' : '#555', maxWidth: 180 }}>
             <option value="">All Companies</option>
             {companies.map(co => <option key={co} value={co}>{co}</option>)}
           </select>
         )}
         <select value={responseFilter} onChange={e => setResponseFilter(e.target.value)}
-          style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (responseFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: responseFilter ? '#eff6ff' : '#fff', color: responseFilter ? '#1d4ed8' : '#555' }}>
+          style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (responseFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: responseFilter ? '#eff6ff' : '#fff', color: responseFilter ? '#1d4ed8' : '#555' }}>
           <option value="">All Responses</option>
           <option value="warm">Warm</option>
           <option value="prospect">Prospect</option>
@@ -458,30 +481,33 @@ export default function Contacts() {
           <option value="negative">Negative</option>
           <option value="not_interested">Not Interested</option>
         </select>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '2px 0 6px' }}>Source</div>
         {sources.length > 0 && (
           <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (sourceFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: sourceFilter ? '#eff6ff' : '#fff', color: sourceFilter ? '#1d4ed8' : '#555' }}>
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (sourceFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: sourceFilter ? '#eff6ff' : '#fff', color: sourceFilter ? '#1d4ed8' : '#555' }}>
             <option value="">All Sources</option>
             {sources.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         )}
         {sourceFilter === 'csv_import' && csvBatches.length > 0 && (
           <select value={batchFilter} onChange={e => setBatchFilter(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (batchFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: batchFilter ? '#eff6ff' : '#fff', color: batchFilter ? '#1d4ed8' : '#555', maxWidth: 220 }}>
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (batchFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: batchFilter ? '#eff6ff' : '#fff', color: batchFilter ? '#1d4ed8' : '#555', maxWidth: 220 }}>
             <option value="">All Imports</option>
             {csvBatches.map(b => <option key={b.id} value={b.id}>{b.file_name || 'Untitled'} — {new Date(b.imported_at).toLocaleDateString()} ({b.contact_count})</option>)}
           </select>
         )}
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '2px 0 6px' }}>Location</div>
         {countries.length > 0 && (
           <select value={countryFilter} onChange={e => setCountryFilter(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (countryFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: countryFilter ? '#eff6ff' : '#fff', color: countryFilter ? '#1d4ed8' : '#555' }}>
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (countryFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: countryFilter ? '#eff6ff' : '#fff', color: countryFilter ? '#1d4ed8' : '#555' }}>
             <option value="">All Countries</option>
             {countries.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '2px 0 6px' }}>Dates</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
           <select value={dateAddedFilter} onChange={e => setDateAddedFilter(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (dateAddedFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: dateAddedFilter ? '#eff6ff' : '#fff', color: dateAddedFilter ? '#1d4ed8' : '#555' }}>
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (dateAddedFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: dateAddedFilter ? '#eff6ff' : '#fff', color: dateAddedFilter ? '#1d4ed8' : '#555' }}>
             <option value="">Date Added: All</option>
             <option value="7d">Last 7 days</option>
             <option value="30d">Last 30 days</option>
@@ -501,7 +527,7 @@ export default function Contacts() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <select value={lastReachedFilter} onChange={e => setLastReachedFilter(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (lastReachedFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: lastReachedFilter ? '#eff6ff' : '#fff', color: lastReachedFilter ? '#1d4ed8' : '#555' }}>
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (lastReachedFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: lastReachedFilter ? '#eff6ff' : '#fff', color: lastReachedFilter ? '#1d4ed8' : '#555' }}>
             <option value="">Last Reached: All</option>
             <option value="7d">Last 7 days</option>
             <option value="30d">Last 30 days</option>
@@ -519,14 +545,9 @@ export default function Contacts() {
             </>
           )}
         </div>
-        {activeFilters > 0 && (
-          <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setListContactIds(new Set()); }}
-            style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
-            Clear filters ({activeFilters})
-          </button>
+          </div>
         )}
-        <span style={{ fontSize: 12, color: '#aaa', marginLeft: 4 }}>{totalCount} contacts</span>
-      </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
 
       {/* Table */}
       <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e4', overflowX: 'auto' }}>
@@ -664,6 +685,8 @@ export default function Contacts() {
           </div>
         </div>
       )}
+    </div>
+    </div>
     </div>
 
       {/* Duplicate review modal */}
