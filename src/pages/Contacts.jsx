@@ -73,6 +73,8 @@ export default function Contacts() {
   const [responseFilter, setResponseFilter]   = useState('');
   const [sourceFilter, setSourceFilter]       = useState('');
   const [countryFilter, setCountryFilter]     = useState('');
+  const [csvBatches, setCsvBatches]           = useState([]);
+  const [batchFilter, setBatchFilter]         = useState('');
   const [dateAddedFilter, setDateAddedFilter] = useState('');
   const [lastReachedFilter, setLastReachedFilter] = useState('');
   const [dateAddedFrom, setDateAddedFrom]     = useState('');
@@ -87,9 +89,18 @@ export default function Contacts() {
 
   useEffect(() => { fetchLists(); }, []);
 
-  useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo]);
+  useEffect(() => {
+    if (sourceFilter === 'csv_import') {
+      supabase.from('import_batches').select('id, file_name, imported_at, contact_count').eq('owner_id', user.id).order('imported_at', { ascending: false })
+        .then(({ data }) => setCsvBatches(data || []));
+    } else {
+      setBatchFilter('');
+    }
+  }, [sourceFilter, user.id]);
 
-  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, page]);
+  useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo]);
+
+  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, page]);
 
   async function fetchFilterOptions() {
     const { data } = await supabase
@@ -145,6 +156,7 @@ export default function Contacts() {
     if (companyFilter)   q = q.eq('company', companyFilter);
     if (responseFilter)  q = q.eq('response_type', responseFilter);
     if (sourceFilter)    q = q.eq('source', sourceFilter);
+    if (sourceFilter === 'csv_import' && batchFilter) q = q.eq('import_batch_id', batchFilter);
     if (hasEmailFilter === 'yes') q = q.not('email', 'is', null);
     if (hasEmailFilter === 'no')  q = q.is('email', null);
 
@@ -301,7 +313,7 @@ export default function Contacts() {
   // Effective industry: contact's own industry OR inherited from account
   function effectiveIndustry(c) { return c.accounts?.industry || ''; }
 
-  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo].filter(Boolean).length;
+  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo].filter(Boolean).length;
 
   const freshSelected = [...selected].filter(id => {
     const c = contacts.find(x => x.id === id);
@@ -465,6 +477,13 @@ export default function Contacts() {
             style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (sourceFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: sourceFilter ? '#eff6ff' : '#fff', color: sourceFilter ? '#1d4ed8' : '#555' }}>
             <option value="">All Sources</option>
             {sources.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
+        {sourceFilter === 'csv_import' && csvBatches.length > 0 && (
+          <select value={batchFilter} onChange={e => setBatchFilter(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (batchFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: batchFilter ? '#eff6ff' : '#fff', color: batchFilter ? '#1d4ed8' : '#555', maxWidth: 220 }}>
+            <option value="">All Imports</option>
+            {csvBatches.map(b => <option key={b.id} value={b.id}>{b.file_name || 'Untitled'} — {new Date(b.imported_at).toLocaleDateString()} ({b.contact_count})</option>)}
           </select>
         )}
         {countries.length > 0 && (
@@ -790,6 +809,7 @@ function UploadCSV({ userId, onDone }) {
   const [step, setStep]          = useState('idle'); // idle | mapping | reviewing | importing | done
   const [msg, setMsg]            = useState('');
   const [csvHeaders, setCsvHeaders]   = useState([]); // raw header strings
+  const [csvFileName, setCsvFileName] = useState('');
   const [csvDataRows, setCsvDataRows] = useState([]); // array of arrays (raw string values)
   const [mapping, setMapping]         = useState({}); // { headerIndex: fieldKey }
   const [parsedRows, setParsedRows]    = useState([]);
@@ -980,6 +1000,13 @@ function UploadCSV({ userId, onDone }) {
     setStep('importing');
     setMsg('Importing contacts…');
 
+    // One batch row per CSV upload, so the Contacts page can filter down to
+    // exactly the contacts that came from this particular import.
+    const { data: batch } = await supabase.from('import_batches').insert({
+      owner_id: userId, file_name: csvFileName || null, contact_count: rows.length,
+    }).select('id').single();
+    const batchId = batch?.id || null;
+
     const accountMap = {};
     [...existingAccounts, ...createdAccounts].forEach(a => { accountMap[a.name] = a.id; });
 
@@ -988,6 +1015,7 @@ function UploadCSV({ userId, onDone }) {
       ...rest,
       account_id: accountMap[rest.company] || null,
       source: 'csv_import',
+      import_batch_id: batchId,
     }));
 
     const contactNotesToInsert = [];
@@ -1066,6 +1094,7 @@ function UploadCSV({ userId, onDone }) {
     e.target.value = '';
     setMsg('');
     setStep('idle');
+    setCsvFileName(file.name || '');
     parseCSV(file);
   }
 
