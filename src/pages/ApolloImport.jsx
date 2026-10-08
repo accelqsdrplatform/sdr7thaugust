@@ -209,10 +209,21 @@ export default function ApolloImport() {
     const toCreate = newCompanies.filter(c => selectedNewCompanies.has(c.name));
     let { byDomain, byName } = await fetchAccountMaps(assignTo);
     if (toCreate.length > 0) {
-      const { data: created } = await supabase.from('accounts').upsert(
+      if (!assignTo) {
+        alert('Could not create accounts: no owner selected. Please select an owner and try again.');
+        setStep('reviewing-accounts');
+        return;
+      }
+      const { data: created, error } = await supabase.from('accounts').upsert(
         toCreate.map(c => ({ name: c.name, website: c.website || null, owner_id: assignTo })),
         { onConflict: 'owner_id,name' }
       ).select('id, name, website');
+      if (error) {
+        console.error('Account creation failed:', error);
+        alert('Account creation failed: ' + error.message + '\n\nContacts were not imported. Please fix the issue and try again.');
+        setStep('reviewing-accounts');
+        return;
+      }
       (created || []).forEach(a => {
         if (a.website) { const d = normalizeDomain(a.website); if (d) byDomain[d] = a.id; }
         if (a.name) byName[a.name.toLowerCase()] = a.id;
