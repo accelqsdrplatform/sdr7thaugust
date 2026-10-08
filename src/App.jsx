@@ -24,6 +24,7 @@ const ContactDetail= lazy(() => import('./pages/ContactDetail'));
 const Accounts     = lazy(() => import('./pages/Accounts'));
 const AccountDetail= lazy(() => import('./pages/AccountDetail'));
 const Lists        = lazy(() => import('./pages/Lists'));
+const ApolloImport  = lazy(() => import('./pages/ApolloImport'));
 const Responses    = lazy(() => import('./pages/Responses'));
 const ProspectDiscovery = lazy(() => import('./pages/ProspectDiscovery'));
 const Scorecard     = lazy(() => import('./pages/Scorecard'));
@@ -82,6 +83,7 @@ export default function App() {
               <Route path="sequences" element={<Sequences />} />
               <Route path="reports" element={<Reports />} />
               <Route path="lists" element={<Lists />} />
+              <Route path="apollo-import" element={<ApolloImport />} />
               <Route path="responses" element={<Responses />} />
               <Route path="prospect-discovery" element={<ProspectDiscovery />} />
               <Route path="scorecard/:userId" element={<Scorecard />} />
