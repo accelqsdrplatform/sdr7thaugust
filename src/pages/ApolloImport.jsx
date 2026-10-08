@@ -26,7 +26,7 @@ const EMAIL_STATUS_OPTIONS = [
 
 export default function ApolloImport() {
   const { profile } = useAuth();
-  const isSDR = profile?.role === 'sdr';
+  const isOwner = profile?.role === 'owner';
   const [step, setStep] = useState('list');
   const [lists, setLists] = useState([]);
   const [selectedList, setSelectedList] = useState(null);
@@ -56,8 +56,8 @@ export default function ApolloImport() {
       try {
         const data = await callApollo('list_lists');
         setLists(data.labels || []);
-        if (!isSDR) {
-          const { data: h } = await supabase.from('org_hierarchy').select('*').eq('role', 'sdr');
+        if (!isOwner) {
+          const { data: h } = await supabase.from('org_hierarchy').select('*').eq('role', 'owner');
           setSdrs(h || []);
         }
       } catch (e) { setError(e.message); }
@@ -144,7 +144,7 @@ export default function ApolloImport() {
 
   async function runImport() {
     setStep('importing');
-    const assignTo = isSDR ? profile?.user_id : selectedSdr;
+    const assignTo = isOwner ? profile?.user_id : selectedSdr;
     const { data: allAccounts } = await supabase.from('accounts').select('id, name');
     const accountMap = {};
     (allAccounts || []).forEach(a => { accountMap[a.name?.toLowerCase()] = a.id; });
@@ -372,11 +372,11 @@ export default function ApolloImport() {
           </div>
           <div style={{ background:'#fff',border:'0.5px solid #e8e8e4',borderRadius:12,padding:20,marginBottom:16 }}>
             <div style={{ fontSize:14,fontWeight:600,color:'#111',marginBottom:14 }}>Import Options</div>
-            {!isSDR && (
+            {!isOwner && (
               <div style={{ marginBottom:16 }}>
-                <label style={{ fontSize:12,color:'#666',display:'block',marginBottom:6 }}>Assign to SDR</label>
+                <label style={{ fontSize:12,color:'#666',display:'block',marginBottom:6 }}>Assign to</label>
                 <select value={selectedSdr} onChange={e=>setSelectedSdr(e.target.value)} style={{ padding:'9px 12px',border:'1px solid #e0e0e0',borderRadius:8,fontSize:13,width:280 }}>
-                  <option value="">Select SDR…</option>
+                  <option value="">Select owner…</option>
                   {sdrs.map(s=><option key={s.user_id} value={s.user_id}>{s.full_name}</option>)}
                 </select>
               </div>
@@ -386,8 +386,8 @@ export default function ApolloImport() {
               <span><strong>Enrich missing emails</strong><span style={{ color:'#888',marginLeft:6 }}>— Uses Apollo credits ({contacts.filter(c=>!c.email).length} without email)</span></span>
             </label>
           </div>
-          <button onClick={runImport} disabled={!isSDR&&!selectedSdr}
-            style={{ padding:'10px 28px',background:'#2563eb',color:'#fff',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:(!isSDR&&!selectedSdr)?'not-allowed':'pointer',opacity:(!isSDR&&!selectedSdr)?0.6:1 }}>
+          <button onClick={runImport} disabled={!isOwner&&!selectedSdr}
+            style={{ padding:'10px 28px',background:'#2563eb',color:'#fff',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:(!isOwner&&!selectedSdr)?'not-allowed':'pointer',opacity:(!isOwner&&!selectedSdr)?0.6:1 }}>
             Import {toImportCount} contacts
           </button>
         </>
