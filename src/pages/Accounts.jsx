@@ -685,13 +685,16 @@ setSaving(false);
     setNotePopover(null);
     onUpdate();
   }
-  async function deleteContact(contactId) {
-    const { error } = await supabase.from('contacts').delete().eq('id', contactId).eq('owner_id', user.id);
+  async function bulkDeleteSelected() {
+    const ids = [...selectedEnrich];
+    if (ids.length === 0) return;
+    const { error } = await supabase.from('contacts').delete().in('id', ids).eq('owner_id', user.id);
     if (error) {
-      alert('Could not delete contact: ' + error.message);
+      alert('Could not delete contacts: ' + error.message);
       return;
     }
     setDeleteConfirm(null);
+    setSelectedEnrich(new Set());
     onUpdate();
   }
 
@@ -1441,6 +1444,11 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                   {bulkEnriching ? `Enriching… ${bulkEnriching}` : `✨ Enrich Selected (${selectedEnrich.size})`}
                 </button>
               )}
+              {selectedEnrich.size > 0 && (
+                <button onClick={() => setDeleteConfirm({ count: selectedEnrich.size })} style={{ padding: '7px 14px', background: '#fff', border: '1px solid #fecaca', color: '#dc2626', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  🗑️ Delete Selected ({selectedEnrich.size})
+                </button>
+              )}
               <button onClick={() => setShowCsvImport(true)} style={{ padding: '7px 14px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>⬆️ Import CSV</button>
               <button onClick={() => setShowAddContact(true)} style={{ padding: '7px 14px', background: '#2563eb', color: '#fff', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none' }}>+ Add Contact</button>
             </div>
@@ -1557,10 +1565,6 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                         style={{ fontSize: 12, padding: '6px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', color: '#2563eb', cursor: 'pointer', fontWeight: 500, flexShrink: 0 }}>
                         View →
                       </button>
-                      <button onClick={() => setDeleteConfirm({ id: c.id, name: (c.first_name + ' ' + (c.last_name || '')).trim() || c.email })}
-                        style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer', fontWeight: 500, flexShrink: 0 }}>
-                        Delete
-                      </button>
                     </div>
                   );
                 })}
@@ -1573,14 +1577,14 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
             <div style={{ background: '#fff', borderRadius: 10, padding: 24, maxWidth: 360, boxShadow: '0 10px 30px rgba(0,0,0,0.15)' }}>
               <div style={{ fontSize: 14, marginBottom: 16 }}>
-                Delete <strong>{deleteConfirm.name}</strong>?
+                Delete {deleteConfirm.count} contact{deleteConfirm.count !== 1 ? 's' : ''}?
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button onClick={() => setDeleteConfirm(null)}
                   style={{ fontSize: 13, padding: '6px 14px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#333', cursor: 'pointer' }}>
                   Cancel
                 </button>
-                <button onClick={() => deleteContact(deleteConfirm.id)}
+                <button onClick={bulkDeleteSelected}
                   style={{ fontSize: 13, padding: '6px 14px', borderRadius: 6, border: 'none', background: '#dc2626', color: '#fff', cursor: 'pointer' }}>
                   Delete
                 </button>
