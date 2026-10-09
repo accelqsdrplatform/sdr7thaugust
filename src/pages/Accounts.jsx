@@ -181,16 +181,7 @@ export default function Accounts() {
   const PAGE_SIZE = 50;
   const [totalCount, setTotalCount] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
-  const [pinnedAccountIds, setPinnedAccountIds] = useState(() => new Set(JSON.parse(localStorage.getItem('pinned_accounts') || '[]')));
   const [compactList, setCompactList] = useState(() => localStorage.getItem('accounts_compact') === 'true');
-  function togglePinAccount(id) {
-    setPinnedAccountIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      localStorage.setItem('pinned_accounts', JSON.stringify([...next]));
-      return next;
-    });
-  }
   function toggleCompactList() {
     setCompactList(prev => {
       const next = !prev;
@@ -375,7 +366,7 @@ export default function Accounts() {
             <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Loading…</div>
           ) : filtered.length === 0 ? (
             <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No accounts found</div>
-          ) : [...filtered].sort((x, y) => (pinnedAccountIds.has(y.id) ? 1 : 0) - (pinnedAccountIds.has(x.id) ? 1 : 0)).map(a => {
+          ) : filtered.map(a => {
             const ctcs = contactsByAccount[a.id] || [];
             const score = calcScore(a, ctcs);
             const sc = scoreColor(score);
@@ -383,7 +374,6 @@ export default function Accounts() {
             const ac = avatarColor(a.name);
             const signals = a.signals || {};
             const activeSignalCount = SIGNAL_DEFS.filter(s => signals[s.key]).length;
-            const isPinnedAccount = pinnedAccountIds.has(a.id);
             return (
               <div key={a.id} onClick={() => setSelectedId(a.id)} style={{
                 padding: '11px 14px', cursor: 'pointer',
@@ -404,10 +394,6 @@ export default function Accounts() {
                       {a.country ? ` · ${a.country}` : ''}
                     </div>
                   </div>
-                  <button onClick={e => { e.stopPropagation(); togglePinAccount(a.id); }} title={isPinnedAccount ? 'Unpin' : 'Pin to top'}
-                    style={{ fontSize: 13, padding: '2px 4px', borderRadius: 5, border: 'none', background: 'none', color: isPinnedAccount ? '#b45309' : '#d1d5db', cursor: 'pointer', flexShrink: 0 }}>
-                    {isPinnedAccount ? '📌' : '📍'}
-                  </button>
                   <div style={{ textAlign: 'center', flexShrink: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: sc.color }}>{score}</div>
                     <div style={{ width: 28, height: 3, borderRadius: 2, background: '#f0f0f0', marginTop: 2 }}>
@@ -1162,7 +1148,8 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
       {/* MAIN BODY: sidebar + tab content */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
-        {/* SIDEBAR */}
+        {/* SIDEBAR — overview only */}
+        {activeTab === 'overview' && (
         <aside style={{ width: 300, flexShrink: 0, borderRight: '1px solid #e5e7eb', overflowY: 'auto', padding: '20px 16px', background: '#fafafa' }}>
 
           {/* Company details panel */}
@@ -1302,6 +1289,7 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
           </div>
 
         </aside>
+        )}
 
         {/* TAB CONTENT */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
