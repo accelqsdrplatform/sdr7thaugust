@@ -181,6 +181,23 @@ export default function Accounts() {
   const PAGE_SIZE = 50;
   const [totalCount, setTotalCount] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
+  const [pinnedAccountIds, setPinnedAccountIds] = useState(() => new Set(JSON.parse(localStorage.getItem('pinned_accounts') || '[]')));
+  const [compactList, setCompactList] = useState(() => localStorage.getItem('accounts_compact') === 'true');
+  function togglePinAccount(id) {
+    setPinnedAccountIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      localStorage.setItem('pinned_accounts', JSON.stringify([...next]));
+      return next;
+    });
+  }
+  function toggleCompactList() {
+    setCompactList(prev => {
+      const next = !prev;
+      localStorage.setItem('accounts_compact', String(next));
+      return next;
+    });
+  }
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [newAcct, setNewAcct] = useState({ name: '', industry: '', country: '', linkedin_url: '', revenue_millions: '' });
   const [adding, setAdding] = useState(false);
@@ -349,13 +366,16 @@ export default function Accounts() {
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             {FILTERS.map(f => <FilterPill key={f.key} label={f.label} active={filterBy === f.key} onClick={() => setFilterBy(f.key)} />)}
           </div>
+          <button onClick={toggleCompactList} style={{ marginTop: 8, fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid #e5e7eb', background: compactList ? '#eff6ff' : '#fff', color: compactList ? '#1d4ed8' : '#6b7280', cursor: 'pointer', fontWeight: 500 }}>
+            {compactList ? '▾ Compact view' : '▸ Compact view'}
+          </button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid #f3f4f6' }}>
           {loading ? (
             <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Loading…</div>
           ) : filtered.length === 0 ? (
             <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No accounts found</div>
-          ) : filtered.map(a => {
+          ) : [...filtered].sort((x, y) => (pinnedAccountIds.has(y.id) ? 1 : 0) - (pinnedAccountIds.has(x.id) ? 1 : 0)).map(a => {
             const ctcs = contactsByAccount[a.id] || [];
             const score = calcScore(a, ctcs);
             const sc = scoreColor(score);
@@ -363,6 +383,7 @@ export default function Accounts() {
             const ac = avatarColor(a.name);
             const signals = a.signals || {};
             const activeSignalCount = SIGNAL_DEFS.filter(s => signals[s.key]).length;
+            const isPinnedAccount = pinnedAccountIds.has(a.id);
             return (
               <div key={a.id} onClick={() => setSelectedId(a.id)} style={{
                 padding: '11px 14px', cursor: 'pointer',
@@ -383,6 +404,10 @@ export default function Accounts() {
                       {a.country ? ` · ${a.country}` : ''}
                     </div>
                   </div>
+                  <button onClick={e => { e.stopPropagation(); togglePinAccount(a.id); }} title={isPinnedAccount ? 'Unpin' : 'Pin to top'}
+                    style={{ fontSize: 13, padding: '2px 4px', borderRadius: 5, border: 'none', background: 'none', color: isPinnedAccount ? '#b45309' : '#d1d5db', cursor: 'pointer', flexShrink: 0 }}>
+                    {isPinnedAccount ? '📌' : '📍'}
+                  </button>
                   <div style={{ textAlign: 'center', flexShrink: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: sc.color }}>{score}</div>
                     <div style={{ width: 28, height: 3, borderRadius: 2, background: '#f0f0f0', marginTop: 2 }}>
@@ -390,7 +415,7 @@ export default function Accounts() {
                     </div>
                   </div>
                 </div>
-                {(activeSignalCount > 0 || a.revenue_millions) && (
+                {!compactList && (activeSignalCount > 0 || a.revenue_millions) && (
                   <div style={{ display: 'flex', gap: 4, marginTop: 7, marginLeft: 46, flexWrap: 'wrap' }}>
                     {SIGNAL_DEFS.filter(s => signals[s.key]).slice(0, 3).map(s => (
                       <span key={s.key} style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 8, background: s.bg, color: s.color }}>{s.icon} {s.label.split('/')[0].trim()}</span>
@@ -482,9 +507,23 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const [editingLinkedIn, setEditingLinkedIn] = useState(false);
   const [linkedInDraft, setLinkedInDraft] = useState(account.linkedin_url || '');
   const [researchGenerating, setResearchGenerating] = useState({});
+  const [companyDetailsCollapsed, setCompanyDetailsCollapsed] = useState(() => localStorage.getItem('company_details_collapsed') === 'true');
+  const [recordDetailsCollapsed, setRecordDetailsCollapsed] = useState(() => localStorage.getItem('record_details_collapsed') === 'true');
+  function toggleCompanyDetailsCollapsed() {
+    setCompanyDetailsCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('company_details_collapsed', String(next));
+      return next;
+    });
+  }
+  function toggleRecordDetailsCollapsed() {
+    setRecordDetailsCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('record_details_collapsed', String(next));
+      return next;
+    });
+  }
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [pinnedContacts, setPinnedContacts] = useState(new Set());
-  const [expandedContacts, setExpandedContacts] = useState(new Set());
   const [aiResearching, setAiResearching] = useState(false);
   const [newToolName, setNewToolName] = useState('');
   const [newToolStatus, setNewToolStatus] = useState('Legacy');
@@ -687,22 +726,6 @@ setSaving(false);
     setNotePopover(null);
     onUpdate();
   }
-  function togglePin(id) {
-    setPinnedContacts(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-
-  function toggleExpand(id) {
-    setExpandedContacts(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-
   async function bulkDeleteSelected() {
     const ids = [...selectedEnrich];
     if (ids.length === 0) return;
@@ -1145,7 +1168,12 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
           {/* Company details panel */}
           <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Company details</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button onClick={toggleCompanyDetailsCollapsed} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#9ca3af', padding: 0 }}>
+                  {companyDetailsCollapsed ? '▸' : '▾'}
+                </button>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Company details</div>
+              </div>
               {!editingCompanyDetails && (
                 <button onClick={() => { setCompanyDetailsDraft({
                   founded_year: data.founded_year || '', ticker: data.ticker || '', parent_company: data.parent_company || '',
@@ -1154,7 +1182,7 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                 }); setEditingCompanyDetails(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#9ca3af' }}>✏️</button>
               )}
             </div>
-            {editingCompanyDetails ? (
+            {!companyDetailsCollapsed && (editingCompanyDetails ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {[
                   { key: 'industry', label: 'Industry' },
@@ -1187,12 +1215,18 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                 <div>🌐 {data.website || <span style={{ color: '#bbb' }}>No website</span>}</div>
                 <div>🏢 {data.headquarters || <span style={{ color: '#bbb' }}>No headquarters</span>}</div>
               </div>
-            )}
+            ))}
           </div>
 
           {/* Record details panel */}
           <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Record details</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+              <button onClick={toggleRecordDetailsCollapsed} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#9ca3af', padding: 0 }}>
+                {recordDetailsCollapsed ? '▸' : '▾'}
+              </button>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Record details</div>
+            </div>
+            {!recordDetailsCollapsed && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, color: '#374151' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: '#9ca3af' }}>Score</span>
@@ -1207,6 +1241,7 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                 <span>{data.updated_at ? new Date(data.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>
               </div>
             </div>
+            )}
           </div>
 
           {/* Contacts panel */}
@@ -1477,11 +1512,9 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {[...contacts].sort((a, b) => (pinnedContacts.has(b.id) ? 1 : 0) - (pinnedContacts.has(a.id) ? 1 : 0)).map(c => {
+                {contacts.map(c => {
                   const sc2 = STAGE_COLORS[c.status] || { bg: '#f1f5f9', color: '#475569' };
                   const initColor = avatarColor((c.first_name + ' ' + (c.last_name || '')).trim());
-                  const isPinned = pinnedContacts.has(c.id);
-                  const isExpanded = expandedContacts.has(c.id);
                   return (
                     <div key={c.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
 {(!c.email || !c.linkedin_url) && (
@@ -1497,16 +1530,6 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                         {contactNotesMap[c.id] && <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 4, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 380 }}>"{contactNotesMap[c.id]}"</div>}
                       </div>
                       <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 8, background: sc2.bg, color: sc2.color, flexShrink: 0 }}>{c.status}</span>
-                      <button onClick={() => togglePin(c.id)} title={isPinned ? 'Unpin' : 'Pin to top'}
-                        style={{ fontSize: 14, padding: '4px 6px', borderRadius: 6, border: '1px solid #e5e7eb', background: isPinned ? '#fef9c3' : '#fff', color: isPinned ? '#b45309' : '#9ca3af', cursor: 'pointer', flexShrink: 0 }}>
-                        {isPinned ? '📌' : '📍'}
-                      </button>
-                      <button onClick={() => toggleExpand(c.id)} title={isExpanded ? 'Collapse' : 'Expand'}
-                        style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', cursor: 'pointer', flexShrink: 0 }}>
-                        {isExpanded ? '▾' : '▸'}
-                      </button>
-                      {isExpanded && (
-                    <>
 <div style={{ display: 'flex', gap: 4, flexBasis: '100%', paddingLeft: 54, marginTop: -4 }}>
                 <select value={c.pitch_type || ''} onChange={e => updateContactPitchType(c.id, e.target.value)}
                   style={{ fontSize: 10, padding: '2px 4px', borderRadius: 5, border: '1px solid #e0e0e0', background: c.pitch_type ? '#eff6ff' : '#fff', color: c.pitch_type ? '#1d4ed8' : '#999', maxWidth: 110, cursor: 'pointer' }}>
@@ -1595,8 +1618,6 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                         style={{ fontSize: 12, padding: '6px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', color: '#2563eb', cursor: 'pointer', fontWeight: 500, flexShrink: 0 }}>
                         View →
                       </button>
-                    </>
-                  )}
                     </div>
                   );
                 })}
