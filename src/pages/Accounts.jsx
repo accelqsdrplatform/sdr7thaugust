@@ -482,6 +482,7 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const [editingLinkedIn, setEditingLinkedIn] = useState(false);
   const [linkedInDraft, setLinkedInDraft] = useState(account.linkedin_url || '');
   const [researchGenerating, setResearchGenerating] = useState({});
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [aiResearching, setAiResearching] = useState(false);
   const [newToolName, setNewToolName] = useState('');
   const [newToolStatus, setNewToolStatus] = useState('Legacy');
@@ -684,6 +685,16 @@ setSaving(false);
     setNotePopover(null);
     onUpdate();
   }
+  async function deleteContact(contactId) {
+    const { error } = await supabase.from('contacts').delete().eq('id', contactId).eq('owner_id', user.id);
+    if (error) {
+      alert('Could not delete contact: ' + error.message);
+      return;
+    }
+    setDeleteConfirm(null);
+    onUpdate();
+  }
+
   async function startContact(c) {
     setQualifying(c.id);
     const now = new Date().toISOString();
@@ -1546,11 +1557,35 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                         style={{ fontSize: 12, padding: '6px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', color: '#2563eb', cursor: 'pointer', fontWeight: 500, flexShrink: 0 }}>
                         View →
                       </button>
+                      <button onClick={() => setDeleteConfirm({ id: c.id, name: (c.first_name + ' ' + (c.last_name || '')).trim() || c.email })}
+                        style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer', fontWeight: 500, flexShrink: 0 }}>
+                        Delete
+                      </button>
                     </div>
                   );
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {deleteConfirm && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: '#fff', borderRadius: 10, padding: 24, maxWidth: 360, boxShadow: '0 10px 30px rgba(0,0,0,0.15)' }}>
+              <div style={{ fontSize: 14, marginBottom: 16 }}>
+                Delete <strong>{deleteConfirm.name}</strong>?
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setDeleteConfirm(null)}
+                  style={{ fontSize: 13, padding: '6px 14px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#333', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button onClick={() => deleteContact(deleteConfirm.id)}
+                  style={{ fontSize: 13, padding: '6px 14px', borderRadius: 6, border: 'none', background: '#dc2626', color: '#fff', cursor: 'pointer' }}>
+                  Delete
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
