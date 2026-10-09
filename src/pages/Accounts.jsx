@@ -483,6 +483,8 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const [linkedInDraft, setLinkedInDraft] = useState(account.linkedin_url || '');
   const [researchGenerating, setResearchGenerating] = useState({});
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [pinnedContacts, setPinnedContacts] = useState(new Set());
+  const [expandedContacts, setExpandedContacts] = useState(new Set());
   const [aiResearching, setAiResearching] = useState(false);
   const [newToolName, setNewToolName] = useState('');
   const [newToolStatus, setNewToolStatus] = useState('Legacy');
@@ -685,6 +687,22 @@ setSaving(false);
     setNotePopover(null);
     onUpdate();
   }
+  function togglePin(id) {
+    setPinnedContacts(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleExpand(id) {
+    setExpandedContacts(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
   async function bulkDeleteSelected() {
     const ids = [...selectedEnrich];
     if (ids.length === 0) return;
@@ -1459,9 +1477,11 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {contacts.map(c => {
+                {[...contacts].sort((a, b) => (pinnedContacts.has(b.id) ? 1 : 0) - (pinnedContacts.has(a.id) ? 1 : 0)).map(c => {
                   const sc2 = STAGE_COLORS[c.status] || { bg: '#f1f5f9', color: '#475569' };
                   const initColor = avatarColor((c.first_name + ' ' + (c.last_name || '')).trim());
+                  const isPinned = pinnedContacts.has(c.id);
+                  const isExpanded = expandedContacts.has(c.id);
                   return (
                     <div key={c.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
 {(!c.email || !c.linkedin_url) && (
@@ -1477,7 +1497,17 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                         {contactNotesMap[c.id] && <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 4, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 380 }}>"{contactNotesMap[c.id]}"</div>}
                       </div>
                       <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 8, background: sc2.bg, color: sc2.color, flexShrink: 0 }}>{c.status}</span>
-                      <div style={{ display: 'flex', gap: 4, flexBasis: '100%', paddingLeft: 54, marginTop: -4 }}>
+                      <button onClick={() => togglePin(c.id)} title={isPinned ? 'Unpin' : 'Pin to top'}
+                        style={{ fontSize: 14, padding: '4px 6px', borderRadius: 6, border: '1px solid #e5e7eb', background: isPinned ? '#fef9c3' : '#fff', color: isPinned ? '#b45309' : '#9ca3af', cursor: 'pointer', flexShrink: 0 }}>
+                        {isPinned ? '📌' : '📍'}
+                      </button>
+                      <button onClick={() => toggleExpand(c.id)} title={isExpanded ? 'Collapse' : 'Expand'}
+                        style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', cursor: 'pointer', flexShrink: 0 }}>
+                        {isExpanded ? '▾' : '▸'}
+                      </button>
+                      {isExpanded && (
+                    <>
+<div style={{ display: 'flex', gap: 4, flexBasis: '100%', paddingLeft: 54, marginTop: -4 }}>
                 <select value={c.pitch_type || ''} onChange={e => updateContactPitchType(c.id, e.target.value)}
                   style={{ fontSize: 10, padding: '2px 4px', borderRadius: 5, border: '1px solid #e0e0e0', background: c.pitch_type ? '#eff6ff' : '#fff', color: c.pitch_type ? '#1d4ed8' : '#999', maxWidth: 110, cursor: 'pointer' }}>
                   <option value=''>Pitch type...</option>
@@ -1565,6 +1595,8 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                         style={{ fontSize: 12, padding: '6px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', color: '#2563eb', cursor: 'pointer', fontWeight: 500, flexShrink: 0 }}>
                         View →
                       </button>
+                    </>
+                  )}
                     </div>
                   );
                 })}
