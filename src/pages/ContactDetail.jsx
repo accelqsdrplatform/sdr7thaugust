@@ -56,11 +56,12 @@ const ACTIVITY_LABELS = {
   response_set:     'Response marked',
   outreach_started: 'Outreach started',
   contact_created:  'Contact added',
+  contact_info_updated: 'Contact info updated',
 };
 const ACTIVITY_ICONS = {
   status_changed: '🔄', bounce_detected: '⛔', email_sent: '✉️',
   reply_logged: '💬', note_added: '📝', research_updated: '🔍',
-  signals_updated: '🎯', stage_advanced: '⬆️', followup_done: '✅',
+  signals_updated: '🎯', stage_advanced: '⬆️', followup_done: '✅', contact_info_updated: '✏️',
   response_set: '📩', outreach_started: '🚀', contact_created: '➕',
 };
 const SOURCE_LABELS = {
@@ -494,7 +495,16 @@ export default function ContactDetail() {
             <InfoRow label="Full name" value={contactName} />
             <InfoRow label="Title" value={contact.title} />
             <InfoRow label="Company" value={contact.company} />
-            <InfoRow label="Email" value={contact.email} />
+            <InfoRow label="Email" value={contact.email} editable placeholder="name@company.com"
+              onSave={async (newEmail) => {
+                await supabase.from('contacts').update({ email: newEmail || null }).eq('id', id);
+                await supabase.from('activity_log').insert({
+                  actor_id: user.id, contact_id: id, activity_type: 'contact_info_updated',
+                  details: { field: 'email', new_value: newEmail || null },
+                });
+                setContact(c => ({ ...c, email: newEmail || null }));
+                fetchTimeline();
+              }} />
             <InfoRow label="Phone" value={contact.phone} />
             <InfoRow label="Industry" value={contact.industry} />
             <InfoRow label="Country" value={contact.country} />
@@ -681,14 +691,53 @@ function InfoCard({ title, children }) {
   );
 }
 
-function InfoRow({ label, value, isLink, danger }) {
-  if (!value) return null;
+function InfoRow({ label, value, isLink, danger, editable, onSave, placeholder }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setDraft(value || ''); }, [value]);
+
+  async function doSave() {
+    const next = draft.trim();
+    if (next === (value || '')) { setEditing(false); return; }
+    setSaving(true);
+    try { await onSave(next); } finally { setSaving(false); setEditing(false); }
+  }
+
+  if (!value && !editable) return null;
+
+  if (editable && editing) {
+    return (
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <span style={{ fontSize: 12, color: '#aaa', width: 120, flexShrink: 0 }}>{label}</span>
+        <input value={draft} onChange={e => setDraft(e.target.value)} placeholder={placeholder} autoFocus
+          onKeyDown={e => { if (e.key === 'Enter') doSave(); if (e.key === 'Escape') { setEditing(false); setDraft(value || ''); } }}
+          style={{ flex: 1, fontSize: 13, padding: '4px 8px', borderRadius: 6, border: '1px solid #2563eb', outline: 'none' }} />
+        <button onClick={doSave} disabled={saving}
+          style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', fontWeight: 500 }}>
+          {saving ? '…' : 'Save'}
+        </button>
+        <button onClick={() => { setEditing(false); setDraft(value || ''); }}
+          style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', cursor: 'pointer' }}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
       <span style={{ fontSize: 12, color: '#aaa', width: 120, flexShrink: 0, paddingTop: 1 }}>{label}</span>
       {isLink
         ? <a href={value} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#2563eb' }}>View profile ↗</a>
-        : <span style={{ fontSize: 13, color: danger ? '#dc2626' : '#333', lineHeight: 1.4 }}>{value}</span>}
+        : <span style={{ fontSize: 13, color: danger ? '#dc2626' : (value ? '#333' : '#bbb'), lineHeight: 1.4, fontStyle: value ? 'normal' : 'italic' }}>{value || 'not set'}</span>}
+      {editable && (
+        <button onClick={() => setEditing(true)} title={'Edit ' + label}
+          style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, border: '1px solid #e0e0e0', background: '#fff', color: '#888', cursor: 'pointer' }}>
+          Edit
+        </button>
+      )}
     </div>
   );
 }
