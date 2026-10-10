@@ -313,6 +313,7 @@ Best opening material: (none recorded separately - use known facts above)
       line('Industry', industry) +
       line('About', research.about || research.overview) +
       line('Employees', research.employees) +
+      line('Revenue', research.revenue) +
       line('Testing tools in use', fmtNamed(research.testing_tools, 'tool') || fmtArr(research.testingTools) || research.techStack) +
       line('Enterprise apps in use', fmtNamed(research.enterprise_apps, 'app') || fmtArr(research.enterpriseApps)) +
       line('SaaS apps in use', fmtNamed(research.saas_apps, 'app') || fmtArr(research.saasApps)) +
