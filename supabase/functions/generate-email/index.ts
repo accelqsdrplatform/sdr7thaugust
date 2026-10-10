@@ -38,6 +38,13 @@ const STAGE_CONTEXT: Record<string, { label: string; intent: string; tone: strin
   },
 }
 
+const CAMPAIGN_ANGLE: Record<string, string> = {
+  Selenium: 'This round, lead with migrating off Selenium. Speak directly to the pain of brittle, code-heavy Selenium suites: high maintenance cost, slow test runs, constant breakage whenever the UI changes, and the engineering hours spent babysitting locators. Position ACCELQ as the self-healing, codeless alternative that cuts framework maintenance overhead and lets QA move faster without a dedicated automation engineering team.',
+  Playwright: 'This round, lead with the build-vs-buy decision around Playwright. Acknowledge Playwright is a solid, modern framework - do not trash it. Position ACCELQ as the layer that removes the ongoing engineering investment of maintaining a custom framework: self-healing locators, no-code authoring for non-engineers, and built-in reporting/analytics out of the box instead of stitched-together tooling.',
+  Cypress: 'This round, lead with the build-vs-buy decision around Cypress. Acknowledge Cypress is a solid, modern framework - do not trash it. Speak to its known limits (cross-origin restrictions, no native mobile support, engineer-only authoring) and position ACCELQ as the codeless, cross-platform layer that covers web, mobile, and API from one suite without the framework upkeep.',
+  'Testing of AI/Agents': 'This round, lead with testing AI-driven features and autonomous agents - the hardest-to-test surface area most QA teams have not solved for yet. Speak to the challenge of validating non-deterministic, AI-driven behavior where traditional scripted assertions fall apart. Position ACCELQ as the platform built to validate AI/agent-driven flows, not just deterministic UI steps.',
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -64,6 +71,15 @@ serve(async (req) => {
       ? `\nSDR CUSTOM INSTRUCTIONS - follow these exactly, they override everything else:\n${customPrompt.trim()}\n`
       : ''
 
+    const campaignAngle = CAMPAIGN_ANGLE[contact.campaign] || null
+    const campaignBlock = campaignAngle
+      ? `\n========================================\nCAMPAIGN ANGLE FOR THIS EMAIL\n========================================\n${campaignAngle}\nWeave this angle into the pain point and proof point - do not just bolt it on as a separate paragraph.\n`
+      : ''
+
+    const pitchTypeBlock = contact.pitch_type
+      ? `\nPlatform / environment they run today: ${contact.pitch_type}\n`
+      : ''
+
     const fmtArr = (a: any) => Array.isArray(a) && a.length > 0 ? a.join(', ') : null;
     const fmtObj = (a: any) => {
       if (!a) return null;
@@ -81,9 +97,9 @@ PRIMARY INPUTS - BUILD THE EMAIL AROUND THESE FIRST
 ========================================
 Pitch angle (the core message to lead with): ${contact.pitch || 'ACCELQ self-healing automation reduces test maintenance and speeds up releases'}
 Persona / who this person is: ${contact.persona || 'QA leader or engineering manager responsible for testing quality and release speed'}
-
+${pitchTypeBlock}
 These two fields are the MOST IMPORTANT inputs. The email must directly address the pitch angle and speak to the persona's specific challenges, goals, and language. Everything else below supports and personalizes these.
-
+${campaignBlock}
 ========================================
 ACCOUNT OVERVIEW (use to understand their business and personalize)
 ========================================
