@@ -51,7 +51,8 @@ function formatUnlockDate(ts) {
   return unlockAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 const COMMON_ENTERPRISE_APPS = ['SAP','Oracle','Workday','ServiceNow','Salesforce','Microsoft Dynamics','SAP S/4HANA','Oracle EBS','PeopleSoft','Guidewire','Siebel','Veeva'];
-const PITCH_TYPES = ['Salesforce','ServiceNow','SAP','Workday','Oracle','MS Dynamics','Pega','nCino','Coupa','Web','Mobile','API','Selenium','Playwright','Cypress','Testing of AI/Agents'];
+const PITCH_TYPES = ['Salesforce','ServiceNow','SAP','Workday','Oracle','MS Dynamics','Pega','nCino','Coupa','Web','Mobile','API'];
+const CAMPAIGNS = ['Generic','Selenium','Playwright','Cypress','Testing of AI/Agents'];
 const PERSONA_LIST = ['Executive / Economic Buyer','QA / Quality Leader','Engineering Leader','Automation / Technical Expert','DevOps / Transformation / Architecture','Practitioner / End User'];
 const STAGE_COLORS = {
   Fresh: { bg: '#dbeafe', color: '#1d4ed8' },
@@ -696,6 +697,12 @@ setSaving(false);
   async function updateContactPersona(cId, ps) {
     const val = ps === '' ? null : ps;
     await supabase.from('contacts').update({ persona: val }).eq('id', cId);
+    onUpdate();
+  }
+
+  async function updateContactCampaign(cId, cm) {
+    const val = cm === '' ? null : cm;
+    await supabase.from('contacts').update({ campaign: val }).eq('id', cId);
     onUpdate();
   }
 
@@ -1528,6 +1535,11 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                   style={{ fontSize: 10, padding: '2px 4px', borderRadius: 5, border: '1px solid #e0e0e0', background: c.persona ? '#f0fdf4' : '#fff', color: c.persona ? '#166534' : '#999', maxWidth: 110, cursor: 'pointer' }}>
                   <option value=''>Persona...</option>
                   {PERSONA_LIST.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <select value={c.campaign || ''} onChange={e => updateContactCampaign(c.id, e.target.value)}
+                  style={{ fontSize: 10, padding: '2px 4px', borderRadius: 5, border: '1px solid #e0e0e0', background: c.campaign ? '#fef3c7' : '#fff', color: c.campaign ? '#92400e' : '#999', maxWidth: 110, cursor: 'pointer' }}>
+                  <option value=''>Campaign...</option>
+                  {CAMPAIGNS.map(cm => <option key={cm} value={cm}>{cm}</option>)}
                 </select>
               </div>
               {c.email ? (
