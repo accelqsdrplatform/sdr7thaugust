@@ -237,7 +237,7 @@ export default function FollowUps() {
           full_name:((contact.first_name||'')+' '+(contact.last_name||'')).trim(),
           title:contact.title,company:contact.company,email:contact.email,
           response:contact.response_type,industry:account.industry,
-          persona:contact.persona,pitch_type:contact.pitch_type,pitch:contact.pitch,
+          persona:contact.persona,pitch_type:contact.pitch_type,pitch:contact.pitch,campaign:contact.campaign,
           contact_note:contactNoteMap[contact.id]||contact.notes||'',
         },
         stage:emailStage, customPrompt:customPrompt||null,
