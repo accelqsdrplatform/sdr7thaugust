@@ -229,7 +229,7 @@ export default function FollowUps() {
     if(!silent){setDrafting(contact.id);setDraftOpen(contact.id);}
     const account=accounts[contact.account_id]||{};
     const senderName=profile?.full_name||user?.email?.split('@')[0]||'SDR';
-    const priorBodies=(sentEmails[contact.id]||[]).slice(0,5).map(e=>e.subject?'Subject: '+e.subject+'\n\n'+e.body:e.body);
+    const priorEmails=(sentEmails[contact.id]||[]).slice(0,5);
     const emailStage=contact.status==='Fresh'?'Fresh':contact.status;
     try {
       const res=await supabase.functions.invoke('generate-email',{body:{
@@ -242,10 +242,10 @@ export default function FollowUps() {
         },
         stage:emailStage, customPrompt:customPrompt||null,
         accountResearch:account.research||{}, accountNote:companyNoteMap[contact.company]||account.notes||'',
-        senderName, priorEmailBodies:priorBodies,
+        senderName, priorEmails,
       }});
       if(!res.error&&res.data?.subject){
-        setDrafts(d=>({...d,[contact.id]:{subject:res.data.subject,body:res.data.body,strategy:res.data.strategy||null}}));
+        setDrafts(d=>({...d,[contact.id]:{subject:res.data.subject,body:res.data.body,strategy:res.data.strategy||null,hookUsed:res.data.hook_used||null,factsAsserted:res.data.facts_asserted||[],unverified:res.data.unverified||[]}}));
         if(!silent) setDraftOpen(contact.id);
       }
     } catch(e){console.error(e);}
@@ -715,7 +715,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
               </div>
               <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
                 <div style={{fontSize:12,fontWeight:700,color:'#374151',flex:1}}>AI Draft — {c.status==='Fresh'?'Initial Email':sm.label}</div>
-                {draft.strategy&&(
+                {(draft.strategy||draft.factsAsserted?.length>0||draft.hookUsed)&&(
                   <button onClick={()=>setStrategyOpen(s=>({...s,[c.id]:!s[c.id]}))}
                     title="View email strategy"
                     style={{width:22,height:22,borderRadius:'50%',border:'1.5px solid #6d28d9',
@@ -743,6 +743,33 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
                 <div style={{fontSize:10,fontWeight:700,color:'#9ca3af',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Body</div>
                 <div style={{fontSize:12,lineHeight:1.85,color:'#374151',padding:'10px 13px',background:'#fff',borderRadius:7,border:'1px solid #e5e7eb',whiteSpace:'pre-wrap',fontFamily:'inherit'}}>{draft.body}</div>
               </div>
+              {strategyOpen[c.id]&&(draft.factsAsserted?.length>0||draft.unverified?.length>0||draft.hookUsed)&&(
+                <div style={{marginTop:10,padding:'12px 14px',background:'#f0fdf4',borderRadius:8,border:'1px solid #bbf7d0',fontSize:12}}>
+                  <div style={{fontWeight:700,color:'#15803d',marginBottom:8,fontSize:13}}>Fact check</div>
+                  {draft.hookUsed&&(
+                    <div style={{marginBottom:8}}>
+                      <span style={{fontWeight:700,color:'#374151'}}>Hook used:</span>{' '}
+                      <span style={{color:'#15803d'}}>{draft.hookUsed}</span>
+                    </div>
+                  )}
+                  {draft.factsAsserted?.length>0&&(
+                    <div style={{marginBottom:8}}>
+                      <div style={{fontWeight:700,color:'#374151',marginBottom:4}}>Facts asserted:</div>
+                      <ul style={{margin:0,paddingLeft:18}}>
+                        {draft.factsAsserted.map((f,i)=><li key={i} style={{color:'#374151'}}>{f}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {draft.unverified?.length>0&&(
+                    <div>
+                      <div style={{fontWeight:700,color:'#b45309',marginBottom:4}}>Left out as unverified:</div>
+                      <ul style={{margin:0,paddingLeft:18}}>
+                        {draft.unverified.map((f,i)=><li key={i} style={{color:'#b45309'}}>{f}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
               {strategyOpen[c.id]&&draft.strategy&&(
                 <div style={{marginTop:10,padding:'12px 14px',background:'#faf5ff',borderRadius:8,border:'1px solid #e9d5ff',fontSize:12}}>
                   <div style={{fontWeight:700,color:'#6d28d9',marginBottom:10,fontSize:13,display:'flex',alignItems:'center',gap:6}}>
