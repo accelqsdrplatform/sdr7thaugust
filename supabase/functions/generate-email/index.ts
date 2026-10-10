@@ -220,6 +220,24 @@ const fmtObj = (a: any) => {
   if (typeof a === 'object') return Object.keys(a).length > 0 ? JSON.stringify(a) : null
   return String(a)
 }
+// Pulls a name field out of an array of objects (or plain strings), comma-joined.
+const fmtNamed = (a: any, key: string) => {
+  if (!Array.isArray(a) || a.length === 0) return null
+  const vals = a.map((x: any) => (x && typeof x === 'object') ? x[key] : x).filter(Boolean)
+  return vals.length > 0 ? vals.join(', ') : null
+}
+// Signals come as [{type,text,date}] - render as "Type: text".
+const fmtSignals = (a: any) => {
+  if (!Array.isArray(a) || a.length === 0) return null
+  const vals = a.map((x: any) => (x && typeof x === 'object') ? `${x.type ? x.type + ': ' : ''}${x.text || ''}`.trim() : x).filter(Boolean)
+  return vals.length > 0 ? vals.join('; ') : null
+}
+// Important-to-know / strategic priorities come as [{title, body|description}].
+const fmtNotes = (a: any, bodyKey: string) => {
+  if (!Array.isArray(a) || a.length === 0) return null
+  const vals = a.map((x: any) => (x && typeof x === 'object') ? `${x.title ? x.title + ': ' : ''}${x[bodyKey] || ''}`.trim() : x).filter(Boolean)
+  return vals.length > 0 ? vals.join('; ') : null
+}
 // Renders "Label: value\n" only if value is non-empty - omit, never placeholder.
 const line = (label: string, value: any) => (value !== null && value !== undefined && String(value).trim() !== '')
   ? `${label}: ${value}\n`
@@ -293,11 +311,14 @@ Best opening material: (none recorded separately - use known facts above)
     const ledgerLines =
       line('Company', contact.company) +
       line('Industry', industry) +
-      line('About', research.overview) +
+      line('About', research.about || research.overview) +
       line('Employees', research.employees) +
-      line('Testing tools in use', fmtArr(research.testingTools) || research.techStack) +
-      line('Enterprise apps in use', fmtArr(research.enterpriseApps)) +
-      line('Recent signal', fmtArr(research.signals) || fmtArr(research.aiSignals) || research.recentNews) +
+      line('Testing tools in use', fmtNamed(research.testing_tools, 'tool') || fmtArr(research.testingTools) || research.techStack) +
+      line('Enterprise apps in use', fmtNamed(research.enterprise_apps, 'app') || fmtArr(research.enterpriseApps)) +
+      line('SaaS apps in use', fmtNamed(research.saas_apps, 'app') || fmtArr(research.saasApps)) +
+      line('Recent signal', fmtSignals(research.ai_signals) || fmtArr(research.signals) || fmtArr(research.aiSignals) || research.recentNews) +
+      line('Important to know', fmtNotes(research.important_to_know, 'body')) +
+      line('Strategic priorities', fmtNotes(research.strategicPriorities, 'description')) +
       `Contact: ${contact.full_name}, ${contact.title || 'title unknown'}\n` +
       line('Stated pain', research.painPoints)
 
