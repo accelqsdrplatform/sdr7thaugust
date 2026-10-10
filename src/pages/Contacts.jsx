@@ -50,6 +50,7 @@ export default function Contacts() {
   const [industries, setIndustries]   = useState([]);
   const [pitchTypes, setPitchTypes]   = useState([]);
   const [personas, setPersonas]       = useState([]);
+  const [campaigns, setCampaigns]     = useState([]);
   const [companies, setCompanies]     = useState([]);
   const [sources, setSources]         = useState([]);
   const [countries, setCountries]     = useState([]);
@@ -60,6 +61,7 @@ export default function Contacts() {
   const [industryFilter, setIndustryFilter]   = useState('');
   const [pitchTypeFilter, setPitchTypeFilter] = useState('');
   const [personaFilter, setPersonaFilter]     = useState('');
+  const [campaignFilter, setCampaignFilter]   = useState('');
   const [listFilter, setListFilter]           = useState('');
   const [hasEmailFilter, setHasEmailFilter]   = useState('');
   const [lists, setLists]                     = useState([]);
@@ -101,17 +103,18 @@ export default function Contacts() {
 
   useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo]);
 
-  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, page]);
+  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, page]);
 
   async function fetchFilterOptions() {
     const { data } = await supabase
       .from('contacts')
-      .select('account_id, pitch_type, persona, company, status, source, accounts(industry, country)')
+      .select('account_id, pitch_type, persona, campaign, company, status, source, accounts(industry, country)')
       .eq('owner_id', user.id);
     const rows = data || [];
     setIndustries([...new Set(rows.map(c => c.accounts?.industry || '').filter(Boolean))].sort());
     setPitchTypes([...new Set(rows.map(c => c.pitch_type).filter(Boolean))].sort());
     setPersonas([...new Set(rows.map(c => c.persona).filter(Boolean))].sort());
+    setCampaigns([...new Set(rows.map(c => c.campaign).filter(Boolean))].sort());
     setCompanies([...new Set(rows.map(c => c.company).filter(Boolean))].sort());
     setSources([...new Set(rows.map(c => c.source).filter(Boolean))].sort());
     setCountries([...new Set(rows.map(c => c.accounts?.country || '').filter(Boolean))].sort());
@@ -154,6 +157,7 @@ export default function Contacts() {
     }
     if (pitchTypeFilter) q = q.eq('pitch_type', pitchTypeFilter);
     if (personaFilter)   q = q.eq('persona', personaFilter);
+    if (campaignFilter)  q = q.eq('campaign', campaignFilter);
     if (companyFilter)   q = q.eq('company', companyFilter);
     if (responseFilter)  q = q.eq('response_type', responseFilter);
     if (sourceFilter)    q = q.eq('source', sourceFilter);
@@ -314,7 +318,7 @@ export default function Contacts() {
   // Effective industry: contact's own industry OR inherited from account
   function effectiveIndustry(c) { return c.accounts?.industry || ''; }
 
-  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo].filter(Boolean).length;
+  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo].filter(Boolean).length;
 
   const freshSelected = [...selected].filter(id => {
     const c = contacts.find(x => x.id === id);
@@ -448,6 +452,13 @@ export default function Contacts() {
             style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (personaFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: personaFilter ? '#eff6ff' : '#fff', color: personaFilter ? '#1d4ed8' : '#555' }}>
             <option value="">All Personas</option>
             {personas.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        )}
+        {campaigns.length > 0 && (
+          <select value={campaignFilter} onChange={e => setCampaignFilter(e.target.value)}
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (campaignFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: campaignFilter ? '#eff6ff' : '#fff', color: campaignFilter ? '#1d4ed8' : '#555' }}>
+            <option value="">All Campaigns</option>
+            {campaigns.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         )}
         <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '2px 0 6px' }}>Lists</div>
@@ -777,6 +788,7 @@ const CONTACT_FIELDS = [
   { key: 'pitch',         label: 'Pitch' },
   { key: 'pitch_type',    label: 'Pitch Type' },
   { key: 'persona',       label: 'Persona' },
+  { key: 'campaign',      label: 'Campaign' },
   { key: 'response_type', label: 'Response Type' },
   { key: 'sender_email',  label: 'Sender Email' },
   { key: '_contact_note', label: 'Contact Note' }, { key: '_company_note', label: 'Company Note' }, { key: 'status', label: 'Status' }, { key: 'response_notes', label: 'Response Notes' }, { key: 'source', label: 'Source' }, { key: 'next_followup', label: 'Next Follow-up' }, { key: 'last_contacted', label: 'Last Contacted' },
@@ -804,6 +816,7 @@ const FIELD_GUESS = [
   { field: 'pitch',         keys: ['pitch','pitch_notes','pitch_content'] },
   { field: 'pitch_type',    keys: ['pitch_type','pitchtype','pitch_category'] },
   { field: 'persona',       keys: ['persona','buyer_persona','persona_type'] },
+  { field: 'campaign',      keys: ['campaign','campaign_type'] },
   { field: 'response_type', keys: ['response_type','responsetype','response'] },
   { field: 'sender_email',  keys: ['sender_email','sender','from_email','sent_from'] }, { field: 'status', keys: ['status','stage'] }, { field: 'response_notes', keys: ['response_notes','responsenotes','response_note'] }, { field: 'source', keys: ['source','lead_source'] }, { field: 'next_followup', keys: ['next_followup','nextfollowup','next_follow_up'] }, { field: 'last_contacted', keys: ['last_contacted','lastcontacted'] },
   { field: '_contact_note', keys: ['notes','note','comments','remarks','contact_note','contact_notes'] }, { field: '_company_note', keys: ['company_note','company_notes'] },
