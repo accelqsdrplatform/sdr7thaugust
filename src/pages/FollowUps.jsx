@@ -143,7 +143,7 @@ export default function FollowUps() {
       .or('status.in.(F1,F2,F3,F4,F5),and(status.eq.Fresh,next_followup.not.is.null)')
       .order('last_contacted',{ascending:false,nullsFirst:false})
       .limit(QUEUE_LIMIT);
-    let aQuery = supabase.from('accounts').select('id,name,industry,research,testing_tools,enterprise_apps,saas_apps').limit(QUEUE_LIMIT);
+    let aQuery = supabase.from('accounts').select('id,name,industry,research,testing_tools,enterprise_apps,saas_apps,employee_count,revenue_millions').limit(QUEUE_LIMIT);
     if (!viewAll||!canViewAll) aQuery=aQuery.eq('owner_id',user.id);
     const [cRes,aRes,lRes]=await Promise.all([
       cQuery, aQuery,
@@ -241,7 +241,7 @@ export default function FollowUps() {
           contact_note:contactNoteMap[contact.id]||contact.notes||'',
         },
         stage:emailStage, customPrompt:customPrompt||null,
-        accountResearch:{...(account.research||{}), testing_tools:account.testing_tools||[], enterprise_apps:account.enterprise_apps||[], saas_apps:account.saas_apps||[]}, accountNote:companyNoteMap[contact.company]||account.notes||'',
+        accountResearch:{...(account.research||{}), testing_tools:account.testing_tools||[], enterprise_apps:account.enterprise_apps||[], saas_apps:account.saas_apps||[], employees:account.employee_count||null, revenue:account.revenue_millions?('$'+account.revenue_millions+'M'):null}, accountNote:companyNoteMap[contact.company]||account.notes||'',
         senderName, priorEmails,
       }});
       if(!res.error&&res.data?.subject){
