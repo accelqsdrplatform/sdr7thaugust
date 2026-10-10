@@ -43,6 +43,8 @@ const SIGNAL_FIELDS = [];
 
 const PERSONA_LIST = ['Executive / Economic Buyer','QA / Quality Leader','Engineering Leader','Automation / Technical Expert','DevOps / Transformation / Architecture','Practitioner / End User'];
 
+const CAMPAIGNS = ['Generic','Selenium','Playwright','Cypress','Testing of AI/Agents'];
+
 const ACTIVITY_LABELS = {
   status_changed:   'Stage changed',
   bounce_detected:  'Marked bounced',
@@ -105,6 +107,7 @@ export default function ContactDetail() {
   const [savingPersona, setSavingPersona] = useState(false);
   const [personaSaved, setPersonaSaved] = useState(false);
   const [pitchType, setPitchType] = useState('');
+  const [campaign, setCampaign] = useState('');
 
   const [timeline, setTimeline] = useState([]);
   const [advancing, setAdvancing] = useState(false);
@@ -120,6 +123,7 @@ export default function ContactDetail() {
       setPitch(data.pitch || '');
       setPersona(data.persona || '');
       setPitchType(data.pitch_type || '');
+      setCampaign(data.campaign || '');
       // Auto-infer persona and pitch_type from title if not set
       if ((!data.persona || !data.pitch_type) && data.title) {
         const inferred = inferFromTitle(data.title, data.industry);
@@ -571,6 +575,23 @@ export default function ContactDetail() {
                   </button>
                 </div>
                 {pitchType && <div style={{marginTop:5,fontSize:11,color:'#888',fontStyle:'italic'}}>Auto-inferred from title — edit if needed</div>}
+              </div>
+              <div style={{marginTop:16}}>
+                <label style={{display:'block',fontSize:11,fontWeight:600,color:'#555',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.3px'}}>Campaign</label>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <select value={campaign} onChange={e => setCampaign(e.target.value)}
+                    style={{flex:1,padding:'8px 12px',borderRadius:8,border:'1px solid #e0e0e0',fontSize:13,color:'#333',background:'#fff',outline:'none',cursor:'pointer'}}>
+                    <option value={''}>— Select campaign —</option>
+                    {CAMPAIGNS.map(cm => <option key={cm} value={cm}>{cm}</option>)}
+                  </select>
+                  <button onClick={async () => {
+                    await supabase.from('contacts').update({ campaign }).eq('id', id);
+                    setContact(c => ({ ...c, campaign }));
+                  }}
+                    style={{padding:'7px 16px',border:'none',borderRadius:8,fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',background:'#2563eb',color:'#fff'}}>
+                    Save
+                  </button>
+                </div>
               </div>
               </div>
             </InfoCard>
