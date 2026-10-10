@@ -6,7 +6,7 @@ const corsHeaders = {
 }
 
 // ============================================================
-// 6 â STAGE SPECS (verbatim from PROMPT-email-generation.md)
+// 6 - STAGE SPECS (verbatim from PROMPT-email-generation.md)
 // ============================================================
 const STAGE_SPEC: Record<string, string> = {
   Fresh: `First touch. Under 100 words, three short paragraphs.
@@ -54,7 +54,7 @@ const AXES_BY_STAGE: Record<string, { name: string; text: string }> = {
 }
 
 // ============================================================
-// 7 â PLATFORM PROFILES (one per pitch_type)
+// 7 - PLATFORM PROFILES (one per pitch_type)
 // ============================================================
 const PLATFORM_PROFILE: Record<string, { cadence: string; architecture: string; testingImplication: string }> = {
   Salesforce: {
@@ -120,7 +120,7 @@ const PLATFORM_PROFILE: Record<string, { cadence: string; architecture: string; 
 }
 
 // ============================================================
-// 9 â PERSONA PROFILES
+// 9 - PERSONA PROFILES
 // ============================================================
 const PERSONA_PROFILE: Record<string, { language: string; never: string; cta: string }> = {
   'Executive / Economic Buyer': {
@@ -156,7 +156,7 @@ const PERSONA_PROFILE: Record<string, { language: string; never: string; cta: st
 }
 
 // ============================================================
-// 8 â CAMPAIGN base angles + combinators
+// 8 - CAMPAIGN base angles + combinators
 // ============================================================
 const CAMPAIGN_BASE: Record<string, string> = {
   Selenium: 'migrating off Selenium: the maintenance burden of a large, brittle, locator-based suite that breaks on every UI change.',
@@ -182,7 +182,7 @@ function campaignPersonaFit(campaign: string, persona: string | undefined): stri
 }
 
 // ============================================================
-// 10 â INDUSTRY STAKE (keyed by lowercase substring match)
+// 10 - INDUSTRY STAKE (keyed by lowercase substring match)
 // ============================================================
 const INDUSTRY_STAKE: Record<string, string> = {
   health: 'A broken flow in a healthcare system is not just an inconvenience - it risks patient data exposure, compliance violations, or a care workflow failing at the point of use.',
@@ -548,7 +548,7 @@ Return ONLY valid JSON:
     }
 
     const clean = (s: string) => (s || '')
-      .replace(/[ââ]/g, '')
+      .replace(/[—–]/g, '')
       .replace(/  +/g, ' ')
       .trim()
 
