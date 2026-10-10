@@ -548,7 +548,7 @@ Return ONLY valid JSON:
     }
 
     const clean = (s: string) => (s || '')
-      .replace(/[—–]/g, '')
+      .replace(/\s*[—–]\s*/g, ', ')
       .replace(/  +/g, ' ')
       .trim()
 
