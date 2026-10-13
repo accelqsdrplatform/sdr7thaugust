@@ -74,6 +74,7 @@ export default function FollowUps() {
   const { user, profile } = useAuth();
   const canViewAll = ['admin','sub-admin'].includes(profile?.role);
   const [viewAll, setViewAll] = useState(false);
+  const [capWarnings, setCapWarnings] = useState([]); // [{ email, sentToday, cap }]
   const navigate = useNavigate();
 
   const [cadence, setCadence] = useState(() => {
@@ -130,6 +131,38 @@ export default function FollowUps() {
 
   useEffect(() => { fetchData(); }, [viewAll]);
 
+  // Soft warning only — the platform can't block sending (it happens in the
+  // rep's own mail client), so this just flags mailboxes that have already
+  // hit their configured daily cap based on today's logged outbound emails.
+  async function loadCapWarnings(contactRows) {
+    const senderEmails = [...new Set((contactRows || []).map(c => (c.sender_email || '').toLowerCase()).filter(Boolean))];
+    if (senderEmails.length === 0) { setCapWarnings([]); return; }
+
+    const { data: accounts } = await supabase.from('email_accounts').select('*').eq('user_id', user.id);
+    const capByEmail = {};
+    (accounts || []).forEach(a => { capByEmail[a.email_address.toLowerCase()] = a.daily_send_cap; });
+
+    const contactSenderMap = {};
+    (contactRows || []).forEach(c => { if (c.sender_email) contactSenderMap[c.id] = c.sender_email.toLowerCase(); });
+    const contactIds = Object.keys(contactSenderMap);
+    if (contactIds.length === 0) { setCapWarnings([]); return; }
+
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const { data: emails } = await supabase.from('emails').select('contact_id')
+      .eq('direction', 'outbound').gte('sent_at', start.toISOString()).in('contact_id', contactIds);
+
+    const sentCount = {};
+    (emails || []).forEach(e => {
+      const se = contactSenderMap[e.contact_id];
+      if (se) sentCount[se] = (sentCount[se] || 0) + 1;
+    });
+
+    const warnings = Object.keys(capByEmail)
+      .filter(email => capByEmail[email] && (sentCount[email] || 0) >= capByEmail[email])
+      .map(email => ({ email, sentToday: sentCount[email] || 0, cap: capByEmail[email] }));
+    setCapWarnings(warnings);
+  }
+
   async function fetchData() {
     setLoading(true);
     // Safety ceiling: this is a work queue (reps need to see the whole thing to
@@ -159,6 +192,7 @@ export default function FollowUps() {
       rows=(fbRes.data||[]).filter(c=>c.status!=='Fresh'||(c.status==='Fresh'&&c.next_followup));
     }
     setContacts(rows||[]);
+    loadCapWarnings(rows||[]);
     const accMap={};
     (aRes.data||[]).forEach(a=>{accMap[a.id]=a;});
     setAccounts(accMap);
@@ -396,6 +430,12 @@ export default function FollowUps() {
               {todayCt} today</div>}
             {readyCt>0&&<div style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:700,color:'#7c3aed',background:'#f5f3ff',border:'1.5px solid #c4b5fd'}}>
               {readyCt} ready</div>}
+            {capWarnings.map(w => (
+              <div key={w.email} title={`${w.email} has sent ${w.sentToday}/${w.cap} today`}
+                style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:700,color:'#b45309',background:'#fffbeb',border:'1.5px solid #fcd34d'}}>
+                ⚠ {w.email} at cap
+              </div>
+            ))}
             {freshContacts.length>0&&<div onClick={()=>setStageFilter(f=>f==='Fresh'?'all':'Fresh')}
               style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:700,color:'#1d4ed8',cursor:'pointer',
                 background:stageFilter==='Fresh'?'#dbeafe':'#eff6ff',border:`1.5px solid ${stageFilter==='Fresh'?'#2563eb':'#93c5fd'}`}}>
