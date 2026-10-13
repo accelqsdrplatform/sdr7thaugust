@@ -547,7 +547,9 @@ Return ONLY valid JSON:
       })
     }
 
-    const clean = (s: string) => (s || '')
+    const fixBrand = (s: string) => (s || '').replace(/\bA+C*ELQ\b/gi, 'ACCELQ')
+
+    const clean = (s: string) => fixBrand(s || '')
       .replace(/\s*[—–]\s*/g, ', ')
       .replace(/  +/g, ' ')
       .trim()
