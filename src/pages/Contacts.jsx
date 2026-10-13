@@ -930,6 +930,11 @@ function UploadCSV({ userId, onDone }) {
   const [selectedNew, setSelectedNew]   = useState(new Set()); // company names to create
   const [dupeMatches, setDupeMatches]   = useState([]); // [{email, existingName, ownerName, isOwn}]
   const [dupeSkip, setDupeSkip]         = useState(new Set()); // emails (lowercase) to skip on import
+  const [myMailboxOptions, setMyMailboxOptions] = useState([]); // this rep's registered email_accounts
+  const [unmatchedSenders, setUnmatchedSenders] = useState([]); // [{ value, count }]
+  const [senderResolutions, setSenderResolutions] = useState({}); // { value: { action: 'existing'|'new', accountId } }
+  const [pendingRows, setPendingRows] = useState([]);
+  const [resolvingSenders, setResolvingSenders] = useState(false);
 
   function splitCSVLine(line) {
     const vals = [];
@@ -1023,6 +1028,93 @@ function UploadCSV({ userId, onDone }) {
 
     if (rows.length === 0) { setMsg('No valid rows found — check your column mapping'); setStep('idle'); return; }
 
+    const sendersResolved = await resolveSenderMailboxes(rows);
+    if (!sendersResolved) return; // paused on the 'senders' step — confirmSenderResolutions() continues from here
+
+    await continueAfterSenderResolution(rows);
+  }
+
+  // Checks the CSV's sender_email values against this rep's registered mailboxes.
+  // Returns true and mutates rows in place if every value matched (or no sender
+  // column was mapped). Returns false and opens the resolution step otherwise.
+  async function resolveSenderMailboxes(rows) {
+    const hasSenderColumn = Object.values(mapping).includes('sender_email');
+    if (!hasSenderColumn) return true;
+
+    const { data: accounts } = await supabase.from('email_accounts').select('*').eq('user_id', userId);
+    const byEmail = {};
+    (accounts || []).forEach(a => { byEmail[a.email_address.toLowerCase()] = a; });
+
+    const distinctValues = [...new Set(rows.map(r => (r.sender_email || '').trim().toLowerCase()).filter(Boolean))];
+    const unmatched = distinctValues.filter(v => !byEmail[v]);
+
+    if (unmatched.length === 0) {
+      rows.forEach(r => {
+        const v = (r.sender_email || '').trim().toLowerCase();
+        if (v && byEmail[v]) { r.sender_account_id = byEmail[v].id; r.sender_email = byEmail[v].email_address; }
+      });
+      return true;
+    }
+
+    setMyMailboxOptions(accounts || []);
+    setUnmatchedSenders(unmatched.map(v => ({
+      value: v,
+      count: rows.filter(r => (r.sender_email || '').trim().toLowerCase() === v).length,
+    })));
+    setSenderResolutions(Object.fromEntries(unmatched.map(v => [v, { action: '', accountId: '' }])));
+    setPendingRows(rows);
+    setMsg('');
+    setStep('senders');
+    return false;
+  }
+
+  function updateSenderResolution(value, patch) {
+    setSenderResolutions(prev => ({ ...prev, [value]: { ...prev[value], ...patch } }));
+  }
+
+  async function confirmSenderResolutions() {
+    const unresolved = unmatchedSenders.some(u => {
+      const r = senderResolutions[u.value];
+      return !r || !r.action || (r.action === 'existing' && !r.accountId);
+    });
+    if (unresolved) { setMsg('Resolve every mailbox before continuing.'); return; }
+
+    setResolvingSenders(true);
+
+    const { data: accounts } = await supabase.from('email_accounts').select('*').eq('user_id', userId);
+    const byEmail = {};
+    (accounts || []).forEach(a => { byEmail[a.email_address.toLowerCase()] = a; });
+
+    const valueToAccountId = {};
+    pendingRows.forEach(r => {
+      const v = (r.sender_email || '').trim().toLowerCase();
+      if (v && byEmail[v]) valueToAccountId[v] = byEmail[v].id;
+    });
+
+    for (const u of unmatchedSenders) {
+      const res = senderResolutions[u.value];
+      if (res.action === 'existing') {
+        valueToAccountId[u.value] = res.accountId;
+      } else if (res.action === 'new') {
+        if (byEmail[u.value]) { valueToAccountId[u.value] = byEmail[u.value].id; continue; }
+        const { data: created, error } = await supabase.from('email_accounts')
+          .insert({ user_id: userId, email_address: u.value, daily_send_cap: 50, is_active: true })
+          .select('id').single();
+        if (!error && created) valueToAccountId[u.value] = created.id;
+      }
+    }
+
+    const resolvedRows = pendingRows.map(r => {
+      const v = (r.sender_email || '').trim().toLowerCase();
+      if (v && valueToAccountId[v]) return { ...r, sender_account_id: valueToAccountId[v], sender_email: v };
+      return r;
+    });
+
+    setResolvingSenders(false);
+    await continueAfterSenderResolution(resolvedRows);
+  }
+
+  async function continueAfterSenderResolution(rows) {
     setParsedRows(rows);
     setStep('importing');
     setMsg('Checking for duplicate contacts…');
@@ -1308,6 +1400,56 @@ function UploadCSV({ userId, onDone }) {
                   Continue
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sender mailbox resolution modal */}
+      {step === 'senders' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 580, maxHeight: '82vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 6px' }}>Unrecognized sender mailboxes</h2>
+            <p style={{ fontSize: 13, color: '#666', margin: '0 0 18px' }}>
+              {unmatchedSenders.length} sender address{unmatchedSenders.length === 1 ? '' : 'es'} in this file aren't registered to you yet. Resolve each one before importing.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
+              {unmatchedSenders.map(u => {
+                const res = senderResolutions[u.value] || {};
+                return (
+                  <div key={u.value} style={{ padding: 12, borderRadius: 8, border: '1px solid #eee', background: '#f9fafb' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 2 }}>{u.value}</div>
+                    <div style={{ fontSize: 12, color: '#999', marginBottom: 10 }}>{u.count} contact{u.count !== 1 ? 's' : ''} in this file</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                        <input type="radio" name={`sender-${u.value}`} checked={res.action === 'existing'} onChange={() => updateSenderResolution(u.value, { action: 'existing' })} />
+                        Map to one of my mailboxes:
+                        <select value={res.action === 'existing' ? (res.accountId || '') : ''} disabled={res.action !== 'existing'}
+                          onChange={e => updateSenderResolution(u.value, { action: 'existing', accountId: e.target.value })}
+                          style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 12 }}>
+                          <option value="">Choose…</option>
+                          {myMailboxOptions.map(mb => <option key={mb.id} value={mb.id}>{mb.label ? `${mb.label} — ` : ''}{mb.email_address}</option>)}
+                        </select>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                        <input type="radio" name={`sender-${u.value}`} checked={res.action === 'new'} onChange={() => updateSenderResolution(u.value, { action: 'new' })} />
+                        Register "{u.value}" as a new mailbox of mine
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {msg && <div style={{ fontSize: 12, color: '#dc2626', marginBottom: 12 }}>{msg}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => { setStep('idle'); setCsvHeaders([]); setCsvDataRows([]); setMapping({}); setMsg(''); }}
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', fontSize: 13, cursor: 'pointer', color: '#666' }}>
+                Cancel
+              </button>
+              <button onClick={confirmSenderResolutions} disabled={resolvingSenders}
+                style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 600, cursor: resolvingSenders ? 'not-allowed' : 'pointer', opacity: resolvingSenders ? 0.7 : 1 }}>
+                {resolvingSenders ? 'Resolving…' : 'Continue'}
+              </button>
             </div>
           </div>
         </div>
