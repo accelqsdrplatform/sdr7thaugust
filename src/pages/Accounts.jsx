@@ -489,6 +489,10 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const canViewAll = ['director', 'manager'].includes(profile?.role);
   const [data, setData] = useState(account);
   const [qualifying, setQualifying] = useState(null);
+  const [myMailboxes, setMyMailboxes] = useState([]);
+  const [showStartModal, setShowStartModal] = useState(false);
+  const [startMailboxId, setStartMailboxId] = useState('');
+  const [pendingStartContact, setPendingStartContact] = useState(null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [editingLinkedIn, setEditingLinkedIn] = useState(false);
@@ -645,6 +649,7 @@ setSaving(false);
     setCompanyNotesList(cn || []);
   }, [data.name]);
   useEffect(() => { fetchCompanyNotes(); }, [fetchCompanyNotes]);
+  useEffect(() => { loadMailboxes(); }, []);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -732,19 +737,71 @@ setSaving(false);
     onUpdate();
   }
 
+  async function loadMailboxes() {
+    const { data: accounts } = await supabase.from('email_accounts').select('*').eq('user_id', user.id).eq('is_active', true).order('created_at', { ascending: true });
+    const { data: myContacts } = await supabase.from('contacts').select('id, sender_account_id, status').eq('owner_id', user.id).not('sender_account_id', 'is', null);
+    const ids = (myContacts || []).map(c => c.id);
+    let sentTodayRows = [];
+    if (ids.length) {
+      const start = new Date(); start.setHours(0, 0, 0, 0);
+      const { data } = await supabase.from('emails').select('contact_id').eq('direction', 'outbound').gte('sent_at', start.toISOString()).in('contact_id', ids);
+      sentTodayRows = data || [];
+    }
+    const byId = Object.fromEntries((myContacts || []).map(c => [c.id, c]));
+    const stats = {};
+    (accounts || []).forEach(a => { stats[a.id] = { active: 0, sentToday: 0 }; });
+    (myContacts || []).forEach(c => {
+      if (stats[c.sender_account_id] && !['won', 'lost', 'bounced', 'unsubscribed'].includes(c.status)) stats[c.sender_account_id].active += 1;
+    });
+    sentTodayRows.forEach(e => {
+      const c = byId[e.contact_id];
+      if (c && stats[c.sender_account_id]) stats[c.sender_account_id].sentToday += 1;
+    });
+    const withStats = (accounts || []).map(a => ({ ...a, ...stats[a.id] }));
+    setMyMailboxes(withStats);
+    if (withStats.length && !startMailboxId) setStartMailboxId(withStats[0].id);
+  }
+
   async function startContact(c) {
+    // Mailbox already locked on this contact (e.g. restarting after cooling off) — no picker needed.
+    if (c.sender_account_id) {
+      await runStartContact(c, null);
+      return;
+    }
+    if (myMailboxes.length === 0) {
+      alert('Register a mailbox under Mailboxes before starting outreach.');
+      return;
+    }
+    setPendingStartContact(c);
+    if (!startMailboxId) setStartMailboxId(myMailboxes[0].id);
+    setShowStartModal(true);
+  }
+
+  async function confirmStartContact() {
+    const c = pendingStartContact;
+    setShowStartModal(false);
+    if (!c) return;
+    const mailbox = myMailboxes.find(m => m.id === startMailboxId);
+    await runStartContact(c, mailbox || null);
+  }
+
+  async function runStartContact(c, mailbox) {
     setQualifying(c.id);
     const now = new Date().toISOString();
-    await supabase.from('contacts').update({
-      status: 'Fresh',
-      next_followup: now,
-    }).eq('id', c.id);
+    const updatePayload = { status: 'Fresh', next_followup: now };
+    if (!c.sender_account_id && mailbox) {
+      updatePayload.sender_account_id = mailbox.id;
+      updatePayload.sender_email = mailbox.email_address;
+    }
+    await supabase.from('contacts').update(updatePayload).eq('id', c.id);
     await supabase.from('activity_log').insert({
       actor_id: user.id, contact_id: c.id,
       activity_type: 'outreach_started', details: { started_from: 'accounts' }
     });
     setQualifying(null);
+    setPendingStartContact(null);
     onUpdate();
+    loadMailboxes();
   }
 
   async function generateResearch(key, label) {
@@ -1939,6 +1996,42 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                 <div style={{ fontSize: 11, color: '#6b7280' }}>{row.detail}</div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      {showStartModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 440, boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px', color: '#111' }}>Choose a sending mailbox</h3>
+            <p style={{ fontSize: 12, color: '#888', margin: '0 0 16px' }}>
+              This mailbox will be locked to {pendingStartContact ? (pendingStartContact.first_name || pendingStartContact.email || 'this contact') : 'this contact'} for the entire outreach thread.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20, maxHeight: 260, overflowY: 'auto' }}>
+              {myMailboxes.map(mb => {
+                const nearCap = mb.sentToday >= mb.daily_send_cap;
+                return (
+                  <label key={mb.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: `1px solid ${startMailboxId === mb.id ? '#2563eb' : '#e0e0e0'}`, cursor: 'pointer', background: startMailboxId === mb.id ? '#eff6ff' : '#fff' }}>
+                    <input type="radio" name="accountStartMailbox" checked={startMailboxId === mb.id} onChange={() => setStartMailboxId(mb.id)} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{mb.label ? `${mb.label} — ` : ''}{mb.email_address}</div>
+                      <div style={{ fontSize: 11, color: nearCap ? '#dc2626' : '#888' }}>
+                        {mb.active} active · {mb.sentToday} sent today / cap {mb.daily_send_cap}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => { setShowStartModal(false); setPendingStartContact(null); }}
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', color: '#666', fontSize: 13, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={confirmStartContact}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Start
+              </button>
+            </div>
           </div>
         </div>
       )}
