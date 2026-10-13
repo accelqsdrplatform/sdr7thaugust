@@ -306,6 +306,11 @@ export default function ContactDetail() {
     fetchNotes(contact.company);
   }
 
+  async function editNote(table, noteId, newBody) {
+    await supabase.from(table).update({ body: newBody }).eq('id', noteId);
+    fetchNotes(contact?.company);
+  }
+
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#aaa', fontSize: 14 }}>Loading…</div>;
   if (!contact) return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 12 }}>
@@ -326,8 +331,6 @@ export default function ContactDetail() {
 
   const tabs = [
     { key: 'overview',  label: 'Overview' },
-    { key: 'research',  label: 'Research' },
-    { key: 'signals',   label: activeSignalsCount > 0 ? `Signals (${activeSignalsCount})` : 'Signals' },
     { key: 'notes',     label: totalNotes > 0 ? `Notes (${totalNotes})` : 'Notes' },
     { key: 'timeline',  label: timeline.length > 0 ? `Timeline (${timeline.length})` : 'Timeline' },
     { key: 'emails',    label: emails.length > 0 ? `Emails (${emails.length})` : 'Emails' },
@@ -608,75 +611,18 @@ export default function ContactDetail() {
         </div>
       )}
 
-      {/* ── RESEARCH ── */}
-      {tab === 'research' && (
-        <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
-            <div>
-              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#111', margin: 0 }}>Contact Research</h2>
-              <p style={{ fontSize: 12, color: '#888', margin: '4px 0 0' }}>Fills into AI email generation — the more you add, the better the emails</p>
-            </div>
-            <button onClick={saveResearch} disabled={savingResearch}
-              style={{ padding: '8px 20px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
-                background: researchSaved ? '#059669' : '#2563eb', color: '#fff', transition: 'background 0.2s' }}>
-              {savingResearch ? 'Saving…' : researchSaved ? '✓ Saved' : 'Save research'}
-            </button>
-          </div>
-          <div style={{ display: 'grid', gap: 18 }}>
-            {RESEARCH_FIELDS.map(f => (
-              <div key={f.key}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.3px' }}>{f.label}</label>
-                <textarea value={research[f.key] || ''} onChange={e => setResearch(r => ({ ...r, [f.key]: e.target.value }))}
-                  placeholder={f.placeholder} rows={3}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 13, resize: 'vertical',
-                    fontFamily: 'inherit', outline: 'none', color: '#333', boxSizing: 'border-box', lineHeight: 1.5,
-                    background: research[f.key] ? '#fafffe' : '#fff' }} />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── SIGNALS ── */}
-      {tab === 'signals' && (
-        <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
-            <div>
-              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#111', margin: 0 }}>Account Signals</h2>
-              <p style={{ fontSize: 12, color: '#888', margin: '4px 0 0' }}>Active signals strengthen email personalization</p>
-            </div>
-            <button onClick={saveSignals} disabled={savingSignals}
-              style={{ padding: '8px 20px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
-                background: signalsSaved ? '#059669' : '#2563eb', color: '#fff', transition: 'background 0.2s' }}>
-              {savingSignals ? 'Saving…' : signalsSaved ? '✓ Saved' : 'Save signals'}
-            </button>
-          </div>
-          <div style={{ display: 'grid', gap: 10 }}>
-            {SIGNAL_FIELDS.map(f => (
-              <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px', borderRadius: 10, cursor: 'pointer',
-                border: `1.5px solid ${signals[f.key] ? '#2563eb' : '#e8e8e4'}`,
-                background: signals[f.key] ? '#eff6ff' : '#fafaf8', transition: 'all 0.15s' }}>
-                <input type="checkbox" checked={!!signals[f.key]} onChange={e => setSignals(s => ({ ...s, [f.key]: e.target.checked }))}
-                  style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#2563eb' }} />
-                <span style={{ fontSize: 16 }}>{f.icon}</span>
-                <span style={{ fontSize: 13, color: signals[f.key] ? '#1d4ed8' : '#444', fontWeight: signals[f.key] ? 600 : 400 }}>{f.label}</span>
-                {signals[f.key] && <span style={{ marginLeft: 'auto', fontSize: 11, color: '#2563eb', fontWeight: 600 }}>ACTIVE</span>}
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ── NOTES ── */}
       {tab === 'notes' && (
         <div style={{ display: 'grid', gap: 16 }}>
           <NoteSection title="Contact Notes" subtitle={`About ${contactName}`}
             notes={contactNotes} newNote={newContactNote} onChangeNote={setNewContactNote}
-            onAdd={addContactNote} saving={savingNote} placeholder="Add a note about this contact…" />
+            onAdd={addContactNote} saving={savingNote} placeholder="Add a note about this contact…"
+            onEdit={(noteId, body) => editNote('contact_notes', noteId, body)} />
           {contact.company && (
             <NoteSection title={`Company Notes — ${contact.company}`} subtitle="Shared across all SDRs on this account"
               notes={companyNotes} newNote={newCompanyNote} onChangeNote={setNewCompanyNote}
-              onAdd={addCompanyNote} saving={savingNote} placeholder={`Add a note about ${contact.company}…`} isCompany />
+              onAdd={addCompanyNote} saving={savingNote} placeholder={`Add a note about ${contact.company}…`} isCompany
+              onEdit={(noteId, body) => editNote('company_notes', noteId, body)} />
           )}
         </div>
       )}
@@ -763,7 +709,7 @@ function InfoRow({ label, value, isLink, danger, editable, onSave, placeholder }
   );
 }
 
-function NoteSection({ title, subtitle, notes, newNote, onChangeNote, onAdd, saving, placeholder, isCompany }) {
+function NoteSection({ title, subtitle, notes, newNote, onChangeNote, onAdd, saving, placeholder, isCompany, onEdit }) {
   return (
     <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 24 }}>
       <h2 style={{ fontSize: 15, fontWeight: 600, color: '#111', margin: '0 0 4px' }}>{title}</h2>
@@ -779,21 +725,53 @@ function NoteSection({ title, subtitle, notes, newNote, onChangeNote, onAdd, sav
       </div>
       {notes.length === 0
         ? <p style={{ fontSize: 13, color: '#bbb', textAlign: 'center', padding: '24px 0' }}>No notes yet</p>
-        : notes.map(n => <NoteCard key={n.id} note={n} isCompany={isCompany} />)}
+        : notes.map(n => <NoteCard key={n.id} note={n} isCompany={isCompany} onEdit={onEdit} />)}
     </div>
   );
 }
 
-function NoteCard({ note, isCompany }) {
+function NoteCard({ note, isCompany, onEdit }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(note.body);
   const author = note.authorName || 'Unknown';
   const date = note.created_at ? new Date(note.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+  function save() {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== note.body) onEdit?.(note.id, trimmed);
+    setEditing(false);
+  }
+
   return (
     <div style={{ padding: '12px 14px', borderRadius: 8, marginBottom: 8, background: isCompany ? '#fffbeb' : '#f8f8f6', borderLeft: `3px solid ${isCompany ? '#f59e0b' : '#e0e0e0'}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>{author}</span>
-        <span style={{ fontSize: 11, color: '#bbb' }}>{date}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, color: '#bbb' }}>{date}</span>
+          {!editing && onEdit && (
+            <button onClick={() => { setDraft(note.body); setEditing(true); }}
+              style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}>
+              Edit
+            </button>
+          )}
+        </div>
       </div>
-      <p style={{ fontSize: 13, color: '#333', margin: 0, lineHeight: 1.6 }}>{note.body}</p>
+      {editing ? (
+        <div>
+          <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={3} autoFocus
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #2563eb', fontSize: 13, fontFamily: 'inherit', resize: 'none', outline: 'none', boxSizing: 'border-box' }} />
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <button onClick={save} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>
+              Save
+            </button>
+            <button onClick={() => setEditing(false)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#888', cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p style={{ fontSize: 13, color: '#333', margin: 0, lineHeight: 1.6 }}>{note.body}</p>
+      )}
     </div>
   );
 }
