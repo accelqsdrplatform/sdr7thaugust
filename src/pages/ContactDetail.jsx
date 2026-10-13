@@ -864,6 +864,7 @@ function EmailHistoryPanel({ emails, loading, contact, userId, onSaved }) {
       body: form.body,
       direction: 'outbound',
       sent_at: new Date(form.sent_at).toISOString(),
+      sender_email: form.sender_email || contact.sender_email || null,
     });
     await supabase.from('activity_log').insert({
       actor_id: userId, contact_id: contact.id,
