@@ -1120,6 +1120,29 @@ function UploadCSV({ userId, onDone }) {
     parseCSV(file);
   }
 
+  function downloadSampleCSV() {
+    const headers = ['full_name','email','title','company','phone','linkedin_url','pitch','pitch_type','persona','campaign','response_type','sender_email','notes','company_note','source','industry','country','website','revenue','employees'];
+    const rows = [
+      ['Jane Doe','jane.doe@testco.com','QA Manager','TestCo Inc','+1-555-201-4488','https://linkedin.com/in/janedoe','ACCELQ eliminates Selenium maintenance overhead','Salesforce','QA / Quality Leader','Selenium','cold','sdr1@accelq.com','Met briefly at a QA conference in September','Running a large legacy Selenium suite on Salesforce','Trade Show','Financial Services','United States','https://testco.com','750','1200'],
+      ['Raj Mehta','raj.mehta@acmecorp.com','Director of Engineering','Acme Corp','+1-555-884-2291','https://linkedin.com/in/rajmehta','Faster release cycles with AI-driven test automation','ServiceNow','Engineering Leader','Generic','warm','sdr2@accelq.com','Replied positively to LinkedIn InMail','Recently expanded ServiceNow footprint','LinkedIn Outreach','Technology','United States','https://acmecorp.com','310','540'],
+      ['Priya Nair','priya.nair@globalbank.com','VP of Quality Engineering','Global Bank Ltd','+44-20-7946-0958','https://linkedin.com/in/priyanair','Reduce regression risk across core banking workflows','SAP','Executive / Economic Buyer','Testing of AI/Agents','prospect','sdr1@accelq.com','','Multiple SAP modules in production across regions','Apollo Import','Banking','United Kingdom','https://globalbank.com','5200','18000'],
+    ];
+    const esc = (v) => {
+      const s = String(v ?? '');
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const csv = [headers, ...rows].map(r => r.map(esc).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'contacts_import_sample.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   const toggleCompany = (name) => {
     setSelectedNew(prev => {
       const next = new Set(prev);
@@ -1142,6 +1165,9 @@ function UploadCSV({ userId, onDone }) {
         {step === 'importing' ? 'Importing…' : '+ Import CSV'}
         <input type="file" accept=".csv" onChange={handleFile} style={{ display: 'none' }} disabled={step === 'importing'} />
       </label>
+      <a href="#" onClick={(e) => { e.preventDefault(); downloadSampleCSV(); }} style={{ fontSize: 12, color: '#2563eb', textDecoration: 'underline', whiteSpace: 'nowrap' }}>
+        Download sample CSV
+      </a>
 
       {step === 'mapping' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
