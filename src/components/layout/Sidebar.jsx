@@ -20,7 +20,8 @@ const navByRole = {
     { to: '/lists', icon: '📋', label: 'Lists' },
     { to: '/apollo-import', icon: '🚀', label: 'Apollo Import' },
     { to: '/sequences', icon: '🔁', label: 'Sequences' },
-    { to: '/settings', icon: '⚙️', label: 'Settings' },
+        { to: '/mailboxes', icon: '📬', label: 'Mailboxes' },
+{ to: '/settings', icon: '⚙️', label: 'Settings' },
   ],
   'sub-admin-direct': [
     { to: '/', icon: '⊞', label: 'Dashboard', end: true },
@@ -35,7 +36,8 @@ const navByRole = {
     { to: '/apollo-import', icon: '🚀', label: 'Apollo Import' },
     { to: '/activity', icon: '📡', label: 'Activity feed' },
     { to: '/reports', icon: '📈', label: 'Reports' },
-    { to: '/settings', icon: '⚙️', label: 'Settings' },
+        { to: '/mailboxes', icon: '📬', label: 'Mailboxes' },
+{ to: '/settings', icon: '⚙️', label: 'Settings' },
   ],
   'sub-admin-team': [
     { to: '/', icon: '⊞', label: 'Dashboard', end: true },
@@ -46,7 +48,8 @@ const navByRole = {
     { to: '/followups', icon: '🕐', label: 'Follow-ups' },
     { to: '/users', icon: '🧑‍💼', label: 'Team Members' },
     { to: '/analytics', icon: '📈', label: 'Analytics' },
-    { to: '/settings', icon: '⚙️', label: 'Settings' },
+        { to: '/mailboxes', icon: '📬', label: 'Mailboxes' },
+{ to: '/settings', icon: '⚙️', label: 'Settings' },
   ],
   admin: [
     { to: '/', icon: '⊞', label: 'Dashboard', end: true },
@@ -59,7 +62,8 @@ const navByRole = {
     { to: '/reports', icon: '📄', label: 'Reports' },
     { to: '/analytics', icon: '📈', label: 'Analytics' },
     { to: '/leaderboard', icon: '🏆', label: 'Leaderboard' },
-    { to: '/settings', icon: '⚙️', label: 'Settings' },
+        { to: '/mailboxes', icon: '📬', label: 'Mailboxes' },
+{ to: '/settings', icon: '⚙️', label: 'Settings' },
   ],
 };
 
