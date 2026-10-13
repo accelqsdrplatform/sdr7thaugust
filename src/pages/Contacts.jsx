@@ -43,6 +43,9 @@ export default function Contacts() {
   const [selected, setSelected] = useState(new Set());
   const [batchStarting, setBatchStarting] = useState(false);
   const [batchMsg, setBatchMsg] = useState('');
+  const [myMailboxes, setMyMailboxes] = useState([]);
+  const [showStartModal, setShowStartModal] = useState(false);
+  const [startMailboxId, setStartMailboxId] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
   const [totalCount, setTotalCount] = useState(0);
@@ -91,6 +94,8 @@ export default function Contacts() {
   }, [search]);
 
   useEffect(() => { fetchLists(); }, []);
+
+  useEffect(() => { loadMailboxes(); }, []);
 
   useEffect(() => {
     if (sourceFilter === 'csv_import') {
@@ -292,6 +297,46 @@ export default function Contacts() {
     fetchContacts();
   }
 
+  async function loadMailboxes() {
+    const { data: accounts } = await supabase.from('email_accounts').select('*').eq('user_id', user.id).eq('is_active', true).order('created_at', { ascending: true });
+    const { data: myContacts } = await supabase.from('contacts').select('id, sender_account_id, status').eq('owner_id', user.id).not('sender_account_id', 'is', null);
+    const ids = (myContacts || []).map(c => c.id);
+    let sentTodayRows = [];
+    if (ids.length) {
+      const start = new Date(); start.setHours(0, 0, 0, 0);
+      const { data } = await supabase.from('emails').select('contact_id').eq('direction', 'outbound').gte('sent_at', start.toISOString()).in('contact_id', ids);
+      sentTodayRows = data || [];
+    }
+    const byId = Object.fromEntries((myContacts || []).map(c => [c.id, c]));
+    const stats = {};
+    (accounts || []).forEach(a => { stats[a.id] = { active: 0, sentToday: 0 }; });
+    (myContacts || []).forEach(c => {
+      if (stats[c.sender_account_id] && !['won', 'lost', 'bounced', 'unsubscribed'].includes(c.status)) stats[c.sender_account_id].active += 1;
+    });
+    sentTodayRows.forEach(e => {
+      const c = byId[e.contact_id];
+      if (c && stats[c.sender_account_id]) stats[c.sender_account_id].sentToday += 1;
+    });
+    const withStats = (accounts || []).map(a => ({ ...a, ...stats[a.id] }));
+    setMyMailboxes(withStats);
+    if (withStats.length && !startMailboxId) setStartMailboxId(withStats[0].id);
+  }
+
+  function openStartFlow() {
+    if (myMailboxes.length === 0) {
+      setBatchMsg('Register a mailbox under Mailboxes before starting outreach.');
+      setTimeout(() => setBatchMsg(''), 4000);
+      return;
+    }
+    if (!startMailboxId) setStartMailboxId(myMailboxes[0].id);
+    setShowStartModal(true);
+  }
+
+  async function confirmBatchStart() {
+    setShowStartModal(false);
+    await batchStart();
+  }
+
   async function batchStart() {
     const ids = [...selected];
     if (!ids.length) return;
@@ -299,11 +344,19 @@ export default function Contacts() {
     setBatchMsg('');
 
     const now = new Date().toISOString();
+    const mailbox = myMailboxes.find(m => m.id === startMailboxId);
 
     let done = 0;
     for (const id of ids) {
       // Keep status as Fresh — matches Accounts page Start behavior; contact appears in Follow-up Queue New Contacts section
-      await supabase.from('contacts').update({ status: 'Fresh', next_followup: now }).eq('id', id);
+      const contact = contacts.find(x => x.id === id);
+      const updatePayload = { status: 'Fresh', next_followup: now };
+      // Lock the sending mailbox on first start — never overwrite one that's already set
+      if (!contact?.sender_account_id && mailbox) {
+        updatePayload.sender_account_id = mailbox.id;
+        updatePayload.sender_email = mailbox.email_address;
+      }
+      await supabase.from('contacts').update(updatePayload).eq('id', id);
       await supabase.from('activity_log').insert({ actor_id: user.id, contact_id: id, activity_type: 'outreach_started', details: { started_from: 'contacts', note: 'Batch start' } });
       done++;
       setBatchMsg(`Starting… ${done}/${ids.length}`);
@@ -313,6 +366,7 @@ export default function Contacts() {
     setBatchMsg(`✓ ${done} contacts started`);
     setTimeout(() => setBatchMsg(''), 3000);
     fetchContacts();
+    loadMailboxes();
   }
 
   // Effective industry: contact's own industry OR inherited from account
@@ -365,7 +419,7 @@ export default function Contacts() {
           )}
           {selected.size > 0 && (
             <button
-              onClick={batchStart}
+              onClick={openStartFlow}
               disabled={batchStarting || freshSelected.length === 0}
               style={{ padding: '8px 16px', background: freshSelected.length > 0 ? '#2563eb' : '#e5e7eb', color: freshSelected.length > 0 ? '#fff' : '#aaa', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: freshSelected.length > 0 ? 'pointer' : 'not-allowed', border: 'none' }}>
               {batchStarting ? 'Starting…' : `▶ Start ${freshSelected.length} Fresh`}
@@ -378,6 +432,43 @@ export default function Contacts() {
           <UploadCSV userId={user.id} onDone={fetchContacts} />
         </div>
       </div>
+
+      {showStartModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 440, boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px', color: '#111' }}>Choose a sending mailbox</h3>
+            <p style={{ fontSize: 12, color: '#888', margin: '0 0 16px' }}>
+              This mailbox will be locked to these contacts for their entire outreach thread. Contacts that already have a mailbox assigned keep it.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20, maxHeight: 260, overflowY: 'auto' }}>
+              {myMailboxes.map(mb => {
+                const nearCap = mb.sentToday >= mb.daily_send_cap;
+                return (
+                  <label key={mb.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: `1px solid ${startMailboxId === mb.id ? '#2563eb' : '#e0e0e0'}`, cursor: 'pointer', background: startMailboxId === mb.id ? '#eff6ff' : '#fff' }}>
+                    <input type="radio" name="startMailbox" checked={startMailboxId === mb.id} onChange={() => setStartMailboxId(mb.id)} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{mb.label ? `${mb.label} — ` : ''}{mb.email_address}</div>
+                      <div style={{ fontSize: 11, color: nearCap ? '#dc2626' : '#888' }}>
+                        {mb.active} active · {mb.sentToday} sent today / cap {mb.daily_send_cap}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowStartModal(false)}
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', color: '#666', fontSize: 13, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={confirmBatchStart}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Start {freshSelected.length} Fresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmations */}
       {deleteConfirm && (
