@@ -366,6 +366,26 @@ export default function AccountDetail() {
       {/* Contacts Tab */}
       {tab === 'contacts' && (
         <div>
+          {(() => {
+            const bySender = {};
+            contacts.forEach(c => {
+              if (!c.sender_account_id) return;
+              const key = c.sender_email || 'Unknown mailbox';
+              bySender[key] = (bySender[key] || 0) + 1;
+            });
+            const senderEntries = Object.entries(bySender);
+            if (senderEntries.length === 0) return null;
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14, padding: '10px 14px', background: '#f9fafb', borderRadius: 8, border: '1px solid #eee' }}>
+                <span style={{ fontSize: 12, color: '#888', fontWeight: 600 }}>Mailbox spread:</span>
+                {senderEntries.map(([email, count]) => (
+                  <span key={email} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: '#eff6ff', color: '#2563eb', fontWeight: 500 }}>
+                    {email} ({count})
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
           {contacts.length === 0 ? (
             <div style={{ padding: 32, textAlign: 'center', color: '#aaa', background: '#fff', borderRadius: 10, border: '1px solid #e8e8e4' }}>
               No contacts linked to this account yet.<br />
