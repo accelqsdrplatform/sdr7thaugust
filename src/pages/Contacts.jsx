@@ -1114,32 +1114,86 @@ function UploadCSV({ userId, onDone }) {
     await continueAfterSenderResolution(resolvedRows);
   }
 
+  // Normalized "no email" fallback match key: first+last name and company,
+  // lowercased/trimmed. Returns null when there isn't enough signal to match
+  // confidently (needs a name AND a company).
+  function nameCompanyKey(r) {
+    const fn = (r.first_name || '').trim().toLowerCase();
+    const ln = (r.last_name || '').trim().toLowerCase();
+    const co = (r.company || '').trim().toLowerCase();
+    if (!co || (!fn && !ln)) return null;
+    return `${fn}|${ln}|${co}`;
+  }
+
   async function continueAfterSenderResolution(rows) {
     setParsedRows(rows);
     setStep('importing');
     setMsg('Checking for duplicate contacts…');
 
+    // Tag every row with the key we'll use to detect it as a duplicate —
+    // email when present, otherwise a normalized name+company fallback so
+    // contacts with no email address don't silently re-import every time.
+    rows.forEach(r => {
+      const e = (r.email || '').trim().toLowerCase();
+      if (e) { r._dupeKey = 'email:' + e; return; }
+      const k = nameCompanyKey(r);
+      r._dupeKey = k ? 'nc:' + k : null;
+    });
+
     const emails = [...new Set(rows.map(r => (r.email || '').trim().toLowerCase()).filter(Boolean))];
-    let matches = [];
+    const matches = [];
+
     if (emails.length > 0) {
       const { data: existingContacts } = await supabase.from('contacts').select('id, email, first_name, last_name, owner_id').in('email', emails);
-      if (existingContacts && existingContacts.length > 0) {
-        const ownerIds = [...new Set(existingContacts.map(c => c.owner_id))];
-        const { data: owners } = await supabase.from('org_hierarchy').select('user_id, full_name').in('user_id', ownerIds);
-        const ownerNameMap = {};
-        (owners || []).forEach(o => { ownerNameMap[o.user_id] = o.full_name; });
-        matches = existingContacts.map(ec => ({
+      (existingContacts || []).forEach(ec => {
+        matches.push({
+          key: 'email:' + ec.email.toLowerCase(),
           email: ec.email,
           existingName: [ec.first_name, ec.last_name].filter(Boolean).join(' ') || ec.email,
-          ownerName: ec.owner_id === userId ? 'you' : (ownerNameMap[ec.owner_id] || 'another rep'),
-          isOwn: ec.owner_id === userId,
-        }));
-      }
+          ownerId: ec.owner_id,
+          matchType: 'email',
+        });
+      });
+    }
+
+    // Fallback pass for rows that have no email: match on name + company
+    // against existing contacts at the same companies (regardless of
+    // whether those existing contacts have an email on file either).
+    const noEmailCompanies = [...new Set(
+      rows.filter(r => !((r.email || '').trim())).map(r => (r.company || '').trim()).filter(Boolean)
+    )];
+    if (noEmailCompanies.length > 0) {
+      const { data: candidateContacts } = await supabase.from('contacts')
+        .select('id, email, first_name, last_name, company, owner_id')
+        .in('company', noEmailCompanies);
+      const wantedKeys = new Set(rows.map(r => r._dupeKey).filter(k => k && k.startsWith('nc:')));
+      (candidateContacts || []).forEach(ec => {
+        const k = nameCompanyKey(ec);
+        if (!k) return;
+        const fullKey = 'nc:' + k;
+        if (!wantedKeys.has(fullKey)) return;
+        matches.push({
+          key: fullKey,
+          email: '',
+          existingName: [ec.first_name, ec.last_name].filter(Boolean).join(' ') || ec.company,
+          ownerId: ec.owner_id,
+          matchType: 'name_company',
+        });
+      });
     }
 
     if (matches.length > 0) {
-      setDupeMatches(matches);
-      setDupeSkip(new Set(matches.map(m => m.email.toLowerCase())));
+      const ownerIds = [...new Set(matches.map(m => m.ownerId))];
+      const { data: owners } = await supabase.from('org_hierarchy').select('user_id, full_name').in('user_id', ownerIds);
+      const ownerNameMap = {};
+      (owners || []).forEach(o => { ownerNameMap[o.user_id] = o.full_name; });
+      const fullMatches = matches.map(m => ({
+        ...m,
+        ownerName: m.ownerId === userId ? 'you' : (ownerNameMap[m.ownerId] || 'another rep'),
+        isOwn: m.ownerId === userId,
+      }));
+      setDupeMatches(fullMatches);
+      setDupeSkip(new Set(fullMatches.map(m => m.key)));
       setStep('dupes');
       return;
     }
@@ -1177,20 +1231,18 @@ function UploadCSV({ userId, onDone }) {
     }
   }
 
-  function toggleDupeSkip(email) {
-    const e = email.toLowerCase();
+  function toggleDupeSkip(key) {
     setDupeSkip(prev => {
       const next = new Set(prev);
-      next.has(e) ? next.delete(e) : next.add(e);
+      next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
   }
 
   async function confirmDupesAndContinue() {
     const rows = parsedRows.filter(r => {
-      const e = (r.email || '').trim().toLowerCase();
-      if (!e) return true;
-      return !dupeSkip.has(e);
+      if (!r._dupeKey) return true;
+      return !dupeSkip.has(r._dupeKey);
     });
     if (rows.length === 0) {
       setMsg('All contacts skipped — nothing to import');
@@ -1461,15 +1513,17 @@ function UploadCSV({ userId, onDone }) {
           <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 560, maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
             <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 6px' }}>Possible duplicate contacts</h2>
             <p style={{ fontSize: 13, color: '#666', margin: '0 0 18px' }}>
-              {dupeMatches.length} email{dupeMatches.length === 1 ? '' : 's'} in this file already exist in the platform. They're skipped by default — check a box to import it anyway.
+              {dupeMatches.length} contact{dupeMatches.length === 1 ? '' : 's'} in this file may already exist in the platform — matched by email where available, or by name + company when no email was given. They're skipped by default — check a box to import it anyway.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
               {dupeMatches.map(m => (
-                <label key={m.email} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 10, borderRadius: 8, border: '1px solid #eee', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={!dupeSkip.has(m.email.toLowerCase())} onChange={() => toggleDupeSkip(m.email)} style={{ marginTop: 3, cursor: 'pointer' }} />
+                <label key={m.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 10, borderRadius: 8, border: '1px solid #eee', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!dupeSkip.has(m.key)} onChange={() => toggleDupeSkip(m.key)} style={{ marginTop: 3, cursor: 'pointer' }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, color: '#111' }}>{m.existingName}</div>
-                    <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{m.email}</div>
+                    {m.email
+                      ? <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{m.email}</div>
+                      : <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>Matched by name + company (no email on file)</div>}
                     <div style={{ fontSize: 12, color: m.isOwn ? '#b45309' : '#991b1b', marginTop: 2 }}>
                       {m.isOwn ? 'You already have this contact' : `Already owned by ${m.ownerName}`}
                     </div>
