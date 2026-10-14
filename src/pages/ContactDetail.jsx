@@ -521,6 +521,7 @@ export default function ContactDetail() {
                 fetchTimeline();
               }} />
             <InfoRow label="Phone" value={contact.phone} />
+            <InfoRow label="Location" value={contact.location} />
             <InfoRow label="Industry" value={contact.industry} />
             <InfoRow label="Country" value={contact.country} />
             <InfoRow label="LinkedIn" value={contact.linkedin_url} isLink />
