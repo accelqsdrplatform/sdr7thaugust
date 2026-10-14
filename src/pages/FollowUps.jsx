@@ -140,6 +140,8 @@ export default function FollowUps() {
   const [strategyOpen,  setStrategyOpen]  = useState({});
   const [historyOpen,   setHistoryOpen]   = useState({});
   const [markingSent,   setMarkingSent]   = useState(null);
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkMarking,    setBulkMarking]    = useState(false);
   const [customPrompts, setCustomPrompts] = useState({});
   const autoGenRanRef = useRef(false);
 
@@ -300,9 +302,11 @@ export default function FollowUps() {
     if(!silent) setDrafting(null);
   }
 
-  async function markSent(contact){
+  // Core of markSent, shared by the single-contact button and the bulk action
+  // below — does the DB writes for one contact without the loading-state
+  // flicker or full-queue refetch, so bulk calls can batch those once.
+  async function markSentCore(contact){
     const next=contact.status==='F5'?'cooling_off':NEXT_STAGE[contact.status]; if(!next) return;
-    setMarkingSent(contact.id);
     const draft=drafts[contact.id];
     const now=new Date().toISOString();
     const daysToNext=(cadence[contact.status]??3);
@@ -330,7 +334,43 @@ export default function FollowUps() {
     });
     setDrafts(d=>{const nd={...d};delete nd[contact.id];return nd;});
     setDraftOpen(o=>o===contact.id?null:o);
+  }
+
+  async function markSent(contact){
+    setMarkingSent(contact.id);
+    await markSentCore(contact);
     setMarkingSent(null);
+    fetchData();
+  }
+
+  // Bulk actions over the current checkbox selection (toolbar: "Generate
+  // Drafts" / "Mark Sent" appear once one or more contacts are selected).
+  function selectedContacts(){
+    const allList=[...filteredFresh,...filteredActive];
+    return allList.filter(c=>selectedIds.has(c.id));
+  }
+
+  async function bulkGenerateDrafts(){
+    const list=selectedContacts().filter(c=>!drafts[c.id]);
+    if(!list.length) return;
+    setBulkGenerating(true);
+    for(const c of list){
+      await doGenerate(c,true);
+      await new Promise(r=>setTimeout(r,400));
+    }
+    setBulkGenerating(false);
+  }
+
+  async function bulkMarkSent(){
+    const list=selectedContacts();
+    if(!list.length) return;
+    if(!window.confirm(`Mark ${list.length} contact${list.length!==1?'s':''} as sent? Each will advance to its next follow-up stage.`)) return;
+    setBulkMarking(true);
+    for(const c of list){
+      await markSentCore(c);
+    }
+    setBulkMarking(false);
+    clearSelection();
     fetchData();
   }
 
@@ -458,7 +498,17 @@ export default function FollowUps() {
               {totalInQueue} in queue</div>
           </div>
           {selectedIds.size>0&&(
-            <button onClick={clearSelection} style={{padding:'6px 10px',borderRadius:8,border:'1.5px solid #d1d5db',background:'#fff',color:'#6b7280',fontSize:12,fontWeight:600,cursor:'pointer',marginRight:6}}>{selectedIds.size} selected ✕</button>
+            <>
+              <button onClick={clearSelection} style={{padding:'6px 10px',borderRadius:8,border:'1.5px solid #d1d5db',background:'#fff',color:'#6b7280',fontSize:12,fontWeight:600,cursor:'pointer',marginRight:6}}>{selectedIds.size} selected ✕</button>
+              <button onClick={bulkGenerateDrafts} disabled={bulkGenerating||bulkMarking}
+                style={{padding:'6px 14px',borderRadius:8,border:'1.5px solid #e5e7eb',background:'#fff',color:'#1d4ed8',fontSize:12,fontWeight:600,cursor:(bulkGenerating||bulkMarking)?'not-allowed':'pointer',opacity:(bulkGenerating||bulkMarking)?0.6:1,marginRight:6}}>
+                {bulkGenerating?'Generating…':`✨ Generate Drafts (${selectedIds.size})`}
+              </button>
+              <button onClick={bulkMarkSent} disabled={bulkGenerating||bulkMarking}
+                style={{padding:'6px 14px',borderRadius:8,border:'none',background:'#2563eb',color:'#fff',fontSize:12,fontWeight:600,cursor:(bulkGenerating||bulkMarking)?'not-allowed':'pointer',opacity:(bulkGenerating||bulkMarking)?0.6:1,marginRight:6}}>
+                {bulkMarking?'Marking…':`Mark Sent (${selectedIds.size})`}
+              </button>
+            </>
           )}
           <button onClick={exportQueueCSV} style={{padding:'6px 14px',borderRadius:8,border:'1.5px solid #e5e7eb',background:'#fff',color:'#2563eb',fontSize:12,fontWeight:600,cursor:'pointer',marginRight:6}}>{'↓ CSV'+(selectedIds.size>0?' ('+selectedIds.size+')':'')}</button><button onClick={()=>setSettingsOpen(s=>!s)}
             style={{padding:'6px 14px',borderRadius:8,border:`1.5px solid ${settingsOpen?'#2563eb':'#e5e7eb'}`,
