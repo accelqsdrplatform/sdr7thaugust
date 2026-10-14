@@ -6,6 +6,14 @@ import { useAuth } from '../context/AuthContext';
 const DEFAULT_CADENCE = { Fresh: 3, F1: 3, F2: 4, F3: 7, F4: 7 };
 const STATUS_CADENCE_KEY = { F1: 'Fresh', F2: 'F1', F3: 'F2', F4: 'F3', F5: 'F4' };
 const NEXT_STAGE = { Fresh: 'F1', F1: 'F2', F2: 'F3', F3: 'F4', F4: 'F5', F5: null };
+// A due date that lands on a Saturday or Sunday rolls forward to the next Monday,
+// so follow-ups are never scheduled for a day nobody's working.
+function skipWeekend(d) {
+  const day = d.getDay();
+  if (day === 6) d.setDate(d.getDate() + 2);
+  else if (day === 0) d.setDate(d.getDate() + 1);
+  return d;
+}
 const ALL_STAGES = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5'];
 
 const STAGE_META = {
@@ -49,7 +57,7 @@ function computeDue(c, cadence) {
   if (c.status==='Fresh') return null;
   const key = STATUS_CADENCE_KEY[c.status]; if (!key) return null;
   const days = (cadence||DEFAULT_CADENCE)[key]??3;
-  if (c.last_contacted) { const d=new Date(c.last_contacted); d.setDate(d.getDate()+days); return d; }
+  if (c.last_contacted) { const d=new Date(c.last_contacted); d.setDate(d.getDate()+days); return skipWeekend(d); }
   return null;
 }
 function getBucket(due) {
@@ -298,7 +306,7 @@ export default function FollowUps() {
     const draft=drafts[contact.id];
     const now=new Date().toISOString();
     const daysToNext=(cadence[contact.status]??3);
-    const nextDue=new Date(); nextDue.setDate(nextDue.getDate()+daysToNext);
+    const nextDue=new Date(); nextDue.setDate(nextDue.getDate()+daysToNext); skipWeekend(nextDue);
     await supabase.from('contacts').update({
       status:next, sequence_step:ALL_STAGES.indexOf(next),
       last_contacted:now, last_touchpoint_date:now, next_followup:nextDue.toISOString(),
@@ -327,7 +335,7 @@ export default function FollowUps() {
   }
 
   async function snooze(id,days){
-    const d=new Date(); d.setDate(d.getDate()+days);
+    const d=new Date(); d.setDate(d.getDate()+days); skipWeekend(d);
     await supabase.from('contacts').update({next_followup:d.toISOString(),last_contacted:d.toISOString()}).eq('id',id);
     fetchData();
   }
