@@ -32,6 +32,13 @@ const RESPONSE_OPTIONS = [
 
 const STEP_MAP = { Fresh: 0, F1: 1, F2: 2, F3: 3, F4: 4, F5: 5 };
 const NEXT_STAGE = { Fresh: 'F1', F1: 'F2', F2: 'F3', F3: 'F4', F4: 'F5', F5: null };
+// A due date that lands on a Saturday or Sunday rolls forward to the next Monday.
+function skipWeekend(d) {
+  const day = d.getDay();
+  if (day === 6) d.setDate(d.getDate() + 2);
+  else if (day === 0) d.setDate(d.getDate() + 1);
+  return d;
+}
 const DAYS_UNTIL_NEXT = { F1: 3, F2: 4, F3: 5, F4: 7, F5: 10 };
 
 const RESEARCH_FIELDS = [
@@ -211,6 +218,7 @@ export default function ContactDetail() {
     const days = DAYS_UNTIL_NEXT[next] || 3;
     const nextDate = new Date();
     nextDate.setDate(nextDate.getDate() + days);
+    skipWeekend(nextDate);
     const update = {
       status: next,
       sequence_step: STEP_MAP[next],
