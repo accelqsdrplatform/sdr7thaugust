@@ -41,6 +41,8 @@ export default function Contacts() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [selected, setSelected] = useState(new Set());
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [batchStarting, setBatchStarting] = useState(false);
   const [batchMsg, setBatchMsg] = useState('');
   const [myMailboxes, setMyMailboxes] = useState([]);
@@ -306,6 +308,16 @@ export default function Contacts() {
     fetchContacts();
   }
 
+  async function bulkDeleteContacts() {
+    setBulkDeleting(true);
+    const ids = Array.from(selected);
+    await supabase.from('contacts').delete().in('id', ids).eq('owner_id', user.id);
+    setBulkDeleting(false);
+    setBulkDeleteConfirm(false);
+    setSelected(new Set());
+    fetchContacts();
+  }
+
   async function clearAllContacts() {
     await supabase.from('contacts').delete().eq('owner_id', user.id);
     setShowClearConfirm(false);
@@ -440,6 +452,14 @@ export default function Contacts() {
               {batchStarting ? 'Starting…' : `▶ Start ${freshSelected.length} Fresh`}
             </button>
           )}
+          {selected.size > 0 && (
+            <button
+              onClick={() => setBulkDeleteConfirm(true)}
+              disabled={bulkDeleting}
+              style={{ padding: '8px 16px', background: '#fff', color: '#dc2626', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: bulkDeleting ? 'not-allowed' : 'pointer', border: '1px solid #fecaca' }}>
+              {bulkDeleting ? 'Deleting…' : `🗑 Delete ${selected.size}`}
+            </button>
+          )}
           <button onClick={findDuplicates}
             style={{ padding: '8px 14px', background: '#fff', color: '#7c3aed', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid #ddd8fe' }}>
             Find Duplicates
@@ -492,6 +512,16 @@ export default function Contacts() {
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => setDeleteConfirm(null)} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid #e0e0e0', background: '#fff', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
             <button onClick={() => deleteContact(deleteConfirm.id)} style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: '#dc2626', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Delete</button>
+          </div>
+        </div>
+      )}
+
+      {bulkDeleteConfirm && (
+        <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 13, color: '#991b1b' }}>Delete <strong>{selected.size}</strong> selected contact{selected.size !== 1 ? 's' : ''}? This can't be undone.</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setBulkDeleteConfirm(false)} disabled={bulkDeleting} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid #e0e0e0', background: '#fff', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={bulkDeleteContacts} disabled={bulkDeleting} style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: '#dc2626', color: '#fff', fontSize: 13, fontWeight: 500, cursor: bulkDeleting ? 'not-allowed' : 'pointer' }}>{bulkDeleting ? 'Deleting…' : 'Delete'}</button>
           </div>
         </div>
       )}
