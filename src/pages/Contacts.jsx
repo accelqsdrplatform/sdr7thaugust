@@ -890,6 +890,7 @@ const CONTACT_FIELDS = [
   { key: 'title',         label: 'Job Title' },
   { key: 'company',       label: 'Company' },
   { key: 'phone',         label: 'Phone' },
+  { key: 'location',      label: 'Location' },
   { key: 'linkedin_url',  label: 'LinkedIn URL' },
   { key: 'pitch',         label: 'Pitch' },
   { key: 'pitch_type',    label: 'Pitch Type' },
@@ -918,6 +919,7 @@ const FIELD_GUESS = [
   { field: 'title',         keys: ['title','job_title','designation','role','position'] },
   { field: 'company',       keys: ['company','company_name','organization','organisation','account','employer'] },
   { field: 'phone',         keys: ['phone','phone_number','mobile','contact_number','telephone'] },
+  { field: 'location',      keys: ['location','city','contact_location','address','geo','region'] },
   { field: 'linkedin_url',  keys: ['linkedin','linkedin_url','linkedin_profile','li_url'] },
   { field: 'pitch',         keys: ['pitch','pitch_notes','pitch_content'] },
   { field: 'pitch_type',    keys: ['pitch_type','pitchtype','pitch_category'] },
@@ -1371,11 +1373,11 @@ function UploadCSV({ userId, onDone }) {
   }
 
   function downloadSampleCSV() {
-    const headers = ['full_name','email','title','company','phone','linkedin_url','pitch','pitch_type','persona','campaign','response_type','sender_email','notes','company_note','source','industry','country','website','revenue','employees'];
+    const headers = ['full_name','email','title','company','phone','location','linkedin_url','pitch','pitch_type','persona','campaign','response_type','sender_email','notes','company_note','source','industry','country','website','revenue','employees'];
     const rows = [
-      ['Jane Doe','jane.doe@testco.com','QA Manager','TestCo Inc','+1-555-201-4488','https://linkedin.com/in/janedoe','ACCELQ eliminates Selenium maintenance overhead','Salesforce','QA / Quality Leader','Selenium','cold','sdr1@accelq.com','Met briefly at a QA conference in September','Running a large legacy Selenium suite on Salesforce','Trade Show','Financial Services','United States','https://testco.com','750','1200'],
-      ['Raj Mehta','raj.mehta@acmecorp.com','Director of Engineering','Acme Corp','+1-555-884-2291','https://linkedin.com/in/rajmehta','Faster release cycles with AI-driven test automation','ServiceNow','Engineering Leader','Generic','warm','sdr2@accelq.com','Replied positively to LinkedIn InMail','Recently expanded ServiceNow footprint','LinkedIn Outreach','Technology','United States','https://acmecorp.com','310','540'],
-      ['Priya Nair','priya.nair@globalbank.com','VP of Quality Engineering','Global Bank Ltd','+44-20-7946-0958','https://linkedin.com/in/priyanair','Reduce regression risk across core banking workflows','SAP','Executive / Economic Buyer','Testing of AI/Agents','prospect','sdr1@accelq.com','','Multiple SAP modules in production across regions','Apollo Import','Banking','United Kingdom','https://globalbank.com','5200','18000'],
+      ['Jane Doe','jane.doe@testco.com','QA Manager','TestCo Inc','+1-555-201-4488','New York, NY','https://linkedin.com/in/janedoe','ACCELQ eliminates Selenium maintenance overhead','Salesforce','QA / Quality Leader','Selenium','cold','sdr1@accelq.com','Met briefly at a QA conference in September','Running a large legacy Selenium suite on Salesforce','Trade Show','Financial Services','United States','https://testco.com','750','1200'],
+      ['Raj Mehta','raj.mehta@acmecorp.com','Director of Engineering','Acme Corp','+1-555-884-2291','San Francisco, CA','https://linkedin.com/in/rajmehta','Faster release cycles with AI-driven test automation','ServiceNow','Engineering Leader','Generic','warm','sdr2@accelq.com','Replied positively to LinkedIn InMail','Recently expanded ServiceNow footprint','LinkedIn Outreach','Technology','United States','https://acmecorp.com','310','540'],
+      ['Priya Nair','priya.nair@globalbank.com','VP of Quality Engineering','Global Bank Ltd','+44-20-7946-0958','London, UK','https://linkedin.com/in/priyanair','Reduce regression risk across core banking workflows','SAP','Executive / Economic Buyer','Testing of AI/Agents','prospect','sdr1@accelq.com','','Multiple SAP modules in production across regions','Apollo Import','Banking','United Kingdom','https://globalbank.com','5200','18000'],
     ];
     const esc = (v) => {
       const s = String(v ?? '');
