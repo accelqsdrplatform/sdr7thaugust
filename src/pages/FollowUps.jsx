@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
-const DEFAULT_CADENCE = { Fresh: 0, F1: 3, F2: 4, F3: 7, F4: 7 };
+const DEFAULT_CADENCE = { Fresh: 3, F1: 3, F2: 4, F3: 7, F4: 7 };
 const STATUS_CADENCE_KEY = { F1: 'Fresh', F2: 'F1', F3: 'F2', F4: 'F3', F5: 'F4' };
 const NEXT_STAGE = { Fresh: 'F1', F1: 'F2', F2: 'F3', F3: 'F4', F4: 'F5', F5: null };
 const ALL_STAGES = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5'];
@@ -40,11 +40,17 @@ function avatarColor(str) {
   return AVATAR_PALETTE[Math.abs(h)%AVATAR_PALETTE.length];
 }
 function computeDue(c, cadence) {
-  if (c.status==='Fresh') return c.next_followup ? new Date(c.next_followup) : null;
+  // Trust a stored next_followup first — it's set by markSent (this page) and
+  // by advanceStage/logEmail elsewhere in the platform, and recomputing a
+  // second due date from last_contacted + cadence here was drifting out of
+  // sync with those (different day values), making contacts show as
+  // overdue/today immediately after an email was actually just sent.
+  if (c.next_followup) return new Date(c.next_followup);
+  if (c.status==='Fresh') return null;
   const key = STATUS_CADENCE_KEY[c.status]; if (!key) return null;
   const days = (cadence||DEFAULT_CADENCE)[key]??3;
   if (c.last_contacted) { const d=new Date(c.last_contacted); d.setDate(d.getDate()+days); return d; }
-  return c.next_followup ? new Date(c.next_followup) : null;
+  return null;
 }
 function getBucket(due) {
   if (!due) return 'nodate';
