@@ -965,6 +965,24 @@ function UploadCSV({ userId, onDone }) {
     return vals;
   }
 
+  // Splits raw CSV text into logical records (rows), respecting quoted
+  // fields that themselves contain a newline — e.g. a company name exported
+  // across two physical lines inside quotes. A naive text.split('\n') would
+  // break such a field into two garbled rows.
+  function splitCSVRecords(text) {
+    const records = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '"') { inQ = !inQ; cur += ch; }
+      else if (ch === '\n' && !inQ) { records.push(cur); cur = ''; }
+      else if (ch === '\r') { /* ignore, newline handled by \n */ }
+      else { cur += ch; }
+    }
+    if (cur.trim()) records.push(cur);
+    return records;
+  }
+
   function guessField(header) {
     const h = header.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
     for (const g of FIELD_GUESS) {
@@ -978,7 +996,7 @@ function UploadCSV({ userId, onDone }) {
     reader.onload = (ev) => {
       try {
         const text = ev.target.result.trim();
-        const lines = text.split('\n');
+        const lines = splitCSVRecords(text);
         if (lines.length < 2) { setMsg('CSV has no data rows'); return; }
 
         const headers = splitCSVLine(lines[0]);
