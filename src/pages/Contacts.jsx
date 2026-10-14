@@ -943,8 +943,10 @@ function UploadCSV({ userId, onDone }) {
   const [csvDataRows, setCsvDataRows] = useState([]); // array of arrays (raw string values)
   const [mapping, setMapping]         = useState({}); // { headerIndex: fieldKey }
   const [parsedRows, setParsedRows]    = useState([]);
-  const [newCompanies, setNewCompanies]  = useState([]); // [{name, industry, country, website, revenue_millions, employees}]
+  const [newCompanies, setNewCompanies]  = useState([]); // [{name, industry, country, website, revenue_millions, employees, possibleMatch}]
   const [selectedNew, setSelectedNew]   = useState(new Set()); // company names to create
+  const [resolvedLinks, setResolvedLinks] = useState({}); // companyName -> { id, name } — confident domain/name matches, linked automatically
+  const [companyChoice, setCompanyChoice] = useState({}); // companyName -> 'link' | 'new', for items with a possibleMatch
   const [dupeMatches, setDupeMatches]   = useState([]); // [{email, existingName, ownerName, isOwn}]
   const [dupeSkip, setDupeSkip]         = useState(new Set()); // emails (lowercase) to skip on import
   const [myMailboxOptions, setMyMailboxOptions] = useState([]); // this rep's registered email_accounts
@@ -981,6 +983,32 @@ function UploadCSV({ userId, onDone }) {
     }
     if (cur.trim()) records.push(cur);
     return records;
+  }
+
+  // Normalizes a website/domain string for comparison: strips protocol, "www.",
+  // path/query, lowercases. Mirrors the same helper on the Accounts page so
+  // CSV-import matching and AI-research domain-sharing agree on what counts
+  // as "the same company".
+  function normalizeDomain(website) {
+    if (!website) return '';
+    return String(website).trim().toLowerCase()
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .split('/')[0]
+      .split('?')[0];
+  }
+
+  const LEGAL_SUFFIX_RE = /\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company|group|plc|gmbh|pty|holdings|international|intl)\b\.?/g;
+  // Normalizes a company name for comparison: lowercases, strips punctuation
+  // and common legal suffixes (Inc/Ltd/Group/Corp/...), collapses whitespace.
+  function normalizeCompanyName(name) {
+    if (!name) return '';
+    return String(name)
+      .toLowerCase()
+      .replace(/[.,&]/g, ' ')
+      .replace(LEGAL_SUFFIX_RE, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function guessField(header) {
@@ -1242,27 +1270,61 @@ function UploadCSV({ userId, onDone }) {
 
     const uniqueCompanies = [...new Set(rows.map(r => r.company).filter(c => c && c.trim()))];
     // Scope to this owner only — otherwise another rep's account for the
-    // same company name hides the fact that YOU don't have one yet.
-    const { data: existing } = await supabase.from('accounts').select('id, name').in('name', uniqueCompanies).eq('owner_id', userId);
-    const existingNames = new Set((existing || []).map(a => a.name));
-    const newCoList = uniqueCompanies.filter(n => !existingNames.has(n)).map(name => {
+    // same company name hides the fact that YOU don't have one yet. Pull the
+    // full set (not just literal name matches) so we can also match by
+    // domain or a normalized name — "Westpac Group" vs "Westpac Banking
+    // Corporation" won't match as literal strings, but can match on website
+    // domain or on the suffix-stripped name.
+    const { data: allAccounts } = await supabase.from('accounts').select('id, name, website').eq('owner_id', userId);
+    const existing = allAccounts || [];
+
+    const links = {};      // companyName -> { id, name } — confident match, linked automatically
+    const newCoList = [];  // genuinely new, or an uncertain fuzzy match that needs a human call
+
+    uniqueCompanies.forEach(name => {
       const sample = rows.find(r => r.company === name) || {};
-      return {
+      const csvDomain = normalizeDomain(sample._website);
+      const csvNameNorm = normalizeCompanyName(name);
+
+      // 1. Exact literal name match (fast path, same as before).
+      let match = existing.find(a => a.name === name);
+      // 2. Domain match — the most reliable signal when a website is present.
+      if (!match && csvDomain) match = existing.find(a => normalizeDomain(a.website) === csvDomain);
+      // 3. Exact normalized-name match (legal-suffix-stripped).
+      if (!match && csvNameNorm) match = existing.find(a => normalizeCompanyName(a.name) === csvNameNorm);
+
+      if (match) {
+        links[name] = { id: match.id, name: match.name };
+        return;
+      }
+
+      // 4. Fuzzy match — one normalized name contains the other. Not
+      // confident enough to auto-link; flagged for the reviewer to decide.
+      const fuzzy = csvNameNorm ? existing.find(a => {
+        const an = normalizeCompanyName(a.name);
+        return an && (an.includes(csvNameNorm) || csvNameNorm.includes(an));
+      }) : null;
+
+      newCoList.push({
         name,
         industry:            sample._industry || '',
         country:             sample._country || '',
         website:             sample._website || '',
         revenue_millions:    sample._revenue || '',
         employees:           sample._employees || '',
-      };
+        possibleMatch:       fuzzy ? { id: fuzzy.id, name: fuzzy.name } : null,
+      });
     });
 
+    setResolvedLinks(links);
     setNewCompanies(newCoList);
     if (newCoList.length > 0) {
-      setSelectedNew(new Set(newCoList.map(c => c.name)));
+      setSelectedNew(new Set(newCoList.filter(c => !c.possibleMatch).map(c => c.name)));
+      setCompanyChoice(Object.fromEntries(newCoList.filter(c => c.possibleMatch).map(c => [c.name, 'link'])));
       setStep('reviewing');
     } else {
-      await runImport(rows, existing || [], []);
+      const linkedAccounts = Object.entries(links).map(([name, v]) => ({ id: v.id, name }));
+      await runImport(rows, linkedAccounts, []);
     }
   }
 
@@ -1356,19 +1418,27 @@ function UploadCSV({ userId, onDone }) {
     setStep('importing');
     setMsg('Creating accounts…');
 
-    const uniqueNames = [...new Set(parsedRows.map(r => r.company).filter(Boolean))];
-    // Scope to this owner only, for the same reason as checkNewCompaniesAndProceed.
-    const { data: existingAccounts } = await supabase.from('accounts').select('id, name').in('name', uniqueNames).eq('owner_id', userId);
+    // Start from the confident matches already resolved (exact name, domain,
+    // or exact normalized-name) in checkNewCompaniesAndProceed.
+    const existingAccounts = Object.entries(resolvedLinks).map(([name, v]) => ({ id: v.id, name }));
 
-    const toCreate = newCompanies.filter(c => selectedNew.has(c.name)).map(c => ({
-      name: c.name,
-      owner_id: userId,
-      industry: c.industry || null,
-      country: c.country || null,
-      website: c.website || null,
-      revenue_millions: c.revenue_millions || null,
-      employees: c.employees || null,
-    }));
+    const toCreate = [];
+    newCompanies.forEach(c => {
+      if (c.possibleMatch) {
+        // Flagged as a likely-same company — link to it unless the reviewer
+        // explicitly chose to create it as a separate account.
+        if ((companyChoice[c.name] || 'link') === 'link') {
+          existingAccounts.push({ id: c.possibleMatch.id, name: c.name });
+        } else {
+          toCreate.push({ name: c.name, owner_id: userId, industry: c.industry || null, country: c.country || null, website: c.website || null, revenue_millions: c.revenue_millions || null, employees: c.employees || null });
+        }
+        return;
+      }
+      if (selectedNew.has(c.name)) {
+        toCreate.push({ name: c.name, owner_id: userId, industry: c.industry || null, country: c.country || null, website: c.website || null, revenue_millions: c.revenue_millions || null, employees: c.employees || null });
+      }
+    });
+
     let createdAccounts = [];
     if (toCreate.length > 0) {
       // Upsert on (owner_id, name): safe against races and against the
@@ -1377,7 +1447,7 @@ function UploadCSV({ userId, onDone }) {
       createdAccounts = created || [];
     }
 
-    await runImport(parsedRows, existingAccounts || [], createdAccounts);
+    await runImport(parsedRows, existingAccounts, createdAccounts);
   }
 
   function handleFile(e) {
@@ -1586,16 +1656,33 @@ function UploadCSV({ userId, onDone }) {
           <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 560, maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
             <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 6px' }}>New companies found</h2>
             <p style={{ fontSize: 13, color: '#666', margin: '0 0 18px' }}>
-              {newCompanies.length} companies not in your Accounts yet. Select which ones to create automatically.
+              {newCompanies.length} compan{newCompanies.length === 1 ? 'y' : 'ies'} not confidently matched to an existing account. Some look like they might already exist under a different name — choose to link or create those separately below.
             </p>
             <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-              <button onClick={() => setSelectedNew(new Set(newCompanies.map(c => c.name)))}
+              <button onClick={() => setSelectedNew(new Set(newCompanies.filter(c => !c.possibleMatch).map(c => c.name)))}
                 style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#f9f9f9', cursor: 'pointer' }}>Select all</button>
               <button onClick={() => setSelectedNew(new Set())}
                 style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#f9f9f9', cursor: 'pointer' }}>Deselect all</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
-              {newCompanies.map(c => (
+              {newCompanies.map(c => c.possibleMatch ? (
+                <div key={c.name} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #fde68a', background: '#fffbeb' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#111' }}>{c.name}</div>
+                  <div style={{ fontSize: 12, color: '#92400e', margin: '4px 0 8px' }}>
+                    Might be the same company as your existing <strong>{c.possibleMatch.name}</strong> account.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setCompanyChoice(p => ({ ...p, [c.name]: 'link' }))}
+                      style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid ' + ((companyChoice[c.name] || 'link') === 'link' ? '#2563eb' : '#e0e0e0'), background: (companyChoice[c.name] || 'link') === 'link' ? '#2563eb' : '#fff', color: (companyChoice[c.name] || 'link') === 'link' ? '#fff' : '#374151', fontWeight: 600, cursor: 'pointer' }}>
+                      Link to {c.possibleMatch.name}
+                    </button>
+                    <button onClick={() => setCompanyChoice(p => ({ ...p, [c.name]: 'new' }))}
+                      style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid ' + (companyChoice[c.name] === 'new' ? '#2563eb' : '#e0e0e0'), background: companyChoice[c.name] === 'new' ? '#2563eb' : '#fff', color: companyChoice[c.name] === 'new' ? '#fff' : '#374151', fontWeight: 600, cursor: 'pointer' }}>
+                      Create as new company
+                    </button>
+                  </div>
+                </div>
+              ) : (
                 <div key={c.name} onClick={() => toggleCompany(c.name)}
                   style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid ' + (selectedNew.has(c.name) ? '#bfdbfe' : '#e5e7eb'), background: selectedNew.has(c.name) ? '#eff6ff' : '#fafafa', cursor: 'pointer' }}>
                   <input type="checkbox" checked={selectedNew.has(c.name)} onChange={() => toggleCompany(c.name)} style={{ marginTop: 2, cursor: 'pointer' }} onClick={e => e.stopPropagation()} />
@@ -1613,13 +1700,20 @@ function UploadCSV({ userId, onDone }) {
               ))}
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => runImport(parsedRows, [], [])}
+              <button onClick={() => runImport(parsedRows, Object.entries(resolvedLinks).map(([name, v]) => ({ id: v.id, name })), [])}
                 style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', fontSize: 13, cursor: 'pointer', color: '#666' }}>
                 Skip — import contacts only
               </button>
               <button onClick={confirmAndImport}
                 style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                Create {selectedNew.size} account{selectedNew.size !== 1 ? 's' : ''} & import
+                {(() => {
+                  const createCount = selectedNew.size + newCompanies.filter(c => c.possibleMatch && companyChoice[c.name] === 'new').length;
+                  const linkCount = newCompanies.filter(c => c.possibleMatch && (companyChoice[c.name] || 'link') === 'link').length;
+                  const parts = [];
+                  if (createCount > 0) parts.push(`create ${createCount}`);
+                  if (linkCount > 0) parts.push(`link ${linkCount}`);
+                  return parts.length ? `${parts.join(', ')} & import` : 'Import';
+                })()}
               </button>
             </div>
           </div>
