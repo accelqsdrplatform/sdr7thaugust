@@ -229,19 +229,34 @@ export default function Contacts() {
     setDupeLoading(true);
     setDupeModal(true);
     setDupeGroups([]);
-    // Load all contacts with emails
-    const { data } = await supabase.from('contacts').select('*').eq('owner_id', user.id).not('email', 'is', null).order('created_at', { ascending: true });
+    // Load all of this user's contacts — grouped by email where present,
+    // and by a normalized name+company fallback for contacts with no email
+    // on file (those were invisible to the old email-only dupe scan).
+    const { data } = await supabase.from('contacts').select('*').eq('owner_id', user.id).order('created_at', { ascending: true });
     const grouped = {};
     (data || []).forEach(c => {
-      const key = (c.email || '').trim().toLowerCase();
-      if (!key) return;
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(c);
+      const email = (c.email || '').trim().toLowerCase();
+      let key, label, matchType;
+      if (email) {
+        key = 'email:' + email;
+        label = email;
+        matchType = 'email';
+      } else {
+        const fn = (c.first_name || '').trim().toLowerCase();
+        const ln = (c.last_name || '').trim().toLowerCase();
+        const co = (c.company || '').trim().toLowerCase();
+        if (!co || (!fn && !ln)) return; // not enough signal to dedupe confidently
+        key = 'nc:' + fn + '|' + ln + '|' + co;
+        label = ([c.first_name, c.last_name].filter(Boolean).join(' ') || 'Unnamed') + ' at ' + c.company + ' (no email)';
+        matchType = 'name_company';
+      }
+      if (!grouped[key]) grouped[key] = { label, matchType, contacts: [] };
+      grouped[key].contacts.push(c);
     });
-    const dups = Object.entries(grouped).filter(([, grp]) => grp.length > 1).map(([email, grp]) => ({ email, contacts: grp }));
+    const dups = Object.entries(grouped).filter(([, g]) => g.contacts.length > 1).map(([key, g]) => ({ key, label: g.label, matchType: g.matchType, contacts: g.contacts }));
     // Default: keep the first (oldest) contact in each group
     const keep = {};
-    dups.forEach(({ email, contacts }) => { keep[email] = contacts[0].id; });
+    dups.forEach(({ key, contacts }) => { keep[key] = contacts[0].id; });
     setDupeGroups(dups);
     setDupeKeep(keep);
     setDupeLoading(false);
@@ -250,8 +265,8 @@ export default function Contacts() {
   async function mergeDuplicates() {
     setDupeMerging(true);
     let deleted = 0;
-    for (const { email, contacts } of dupeGroups) {
-      const keepId = dupeKeep[email];
+    for (const { key, contacts } of dupeGroups) {
+      const keepId = dupeKeep[key];
       const toDelete = contacts.filter(c => c.id !== keepId).map(c => c.id);
       if (toDelete.length > 0) {
         await supabase.from('contacts').delete().in('id', toDelete);
@@ -809,19 +824,19 @@ export default function Contacts() {
               ) : dupeGroups.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 40, color: '#059669', fontSize: 14, fontWeight: 500 }}>No duplicates found!</div>
               ) : (
-                dupeGroups.map(({ email, contacts }) => (
-                  <div key={email} style={{ marginBottom: 20, padding: 16, borderRadius: 12, border: '1px solid #e5e7eb', background: '#fafafa' }}>
+                dupeGroups.map(({ key, label, contacts }) => (
+                  <div key={key} style={{ marginBottom: 20, padding: 16, borderRadius: 12, border: '1px solid #e5e7eb', background: '#fafafa' }}>
                     <div style={{ fontSize: 12, color: '#888', fontWeight: 600, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      {email} · {contacts.length} duplicates
+                      {label} · {contacts.length} duplicates
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {contacts.map(c => {
-                        const isKeep = dupeKeep[email] === c.id;
+                        const isKeep = dupeKeep[key] === c.id;
                         const fields = [c.title, c.company, c.phone, c.linkedin_url ? 'LinkedIn' : null, c.persona, c.pitch_type].filter(Boolean).length;
                         return (
-                          <div key={c.id} onClick={() => setDupeKeep(prev => ({ ...prev, [email]: c.id }))}
+                          <div key={c.id} onClick={() => setDupeKeep(prev => ({ ...prev, [key]: c.id }))}
                             style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, border: '2px solid ' + (isKeep ? '#2563eb' : '#e5e7eb'), background: isKeep ? '#eff6ff' : '#fff', cursor: 'pointer' }}>
-                            <input type="radio" checked={isKeep} onChange={() => setDupeKeep(prev => ({ ...prev, [email]: c.id }))} style={{ cursor: 'pointer' }} onClick={e => e.stopPropagation()} />
+                            <input type="radio" checked={isKeep} onChange={() => setDupeKeep(prev => ({ ...prev, [key]: c.id }))} style={{ cursor: 'pointer' }} onClick={e => e.stopPropagation()} />
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 600, fontSize: 13 }}>{[c.first_name, c.last_name].filter(Boolean).join(' ') || '—'}</div>
                               <div style={{ fontSize: 12, color: '#555', marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
