@@ -1283,7 +1283,7 @@ function UploadCSV({ userId, onDone }) {
     [...existingAccounts, ...createdAccounts].forEach(a => { accountMap[a.name] = a.id; });
 
     // Strip internal _fields before inserting contacts
-    const contactRows = rows.map(({ _industry, _country, _website, _revenue, _employees, _contact_note, _company_note, ...rest }) => ({
+    const contactRows = rows.map(({ _industry, _country, _website, _revenue, _employees, _contact_note, _company_note, _dupeKey, ...rest }) => ({
       ...rest,
       account_id: accountMap[rest.company] || null,
       source: 'csv_import',
