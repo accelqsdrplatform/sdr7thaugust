@@ -48,17 +48,16 @@ function avatarColor(str) {
   return AVATAR_PALETTE[Math.abs(h)%AVATAR_PALETTE.length];
 }
 function computeDue(c, cadence) {
-  // Trust a stored next_followup first — it's set by markSent (this page) and
-  // by advanceStage/logEmail elsewhere in the platform, and recomputing a
-  // second due date from last_contacted + cadence here was drifting out of
-  // sync with those (different day values), making contacts show as
-  // overdue/today immediately after an email was actually just sent.
-  if (c.next_followup) return new Date(c.next_followup);
-  if (c.status==='Fresh') return null;
+  // Always recompute from last_contacted + the CURRENT cadence settings
+  // (not a stored next_followup) so this queue stays the single source of
+  // truth for "when is this due": it reacts live to the Settings panel, and
+  // never gets stuck on a stale next_followup value written under an old
+  // cadence or by a different page's own day-count table.
+  if (c.status==='Fresh') return c.next_followup ? new Date(c.next_followup) : null;
   const key = STATUS_CADENCE_KEY[c.status]; if (!key) return null;
   const days = (cadence||DEFAULT_CADENCE)[key]??3;
   if (c.last_contacted) { const d=new Date(c.last_contacted); d.setDate(d.getDate()+days); return skipWeekend(d); }
-  return null;
+  return c.next_followup ? new Date(c.next_followup) : null;
 }
 function getBucket(due) {
   if (!due) return 'nodate';
