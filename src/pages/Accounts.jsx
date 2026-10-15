@@ -189,6 +189,11 @@ export default function Accounts() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('score');
   const [filterBy, setFilterBy] = useState('all');
+  const [showAcctFilters, setShowAcctFilters] = useState(false);
+  const [acctFilterSearch, setAcctFilterSearch] = useState('');
+  function matchesAcctFilterSearch(label) {
+    return !acctFilterSearch.trim() || label.toLowerCase().includes(acctFilterSearch.trim().toLowerCase());
+  }
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
   const [totalCount, setTotalCount] = useState(0);
@@ -457,17 +462,16 @@ export default function Accounts() {
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search accounts…"
               style={{ width: '100%', padding: '7px 10px 7px 28px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#f9fafb', color: '#111' }} />
           </div>
-          <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{
-            width: '100%', fontSize: 11, padding: '5px 8px', borderRadius: 7, border: '1px solid #e5e7eb',
-            background: '#f9fafb', cursor: 'pointer', color: '#555', marginBottom: 10,
+          <button onClick={() => setShowAcctFilters(true)} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '7px 10px', borderRadius: 8,
+            border: '1px solid ' + (filterBy !== 'all' ? '#2563eb' : '#e0e0e0'), background: filterBy !== 'all' ? '#eff6ff' : '#fff',
+            color: filterBy !== 'all' ? '#1d4ed8' : '#555', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 10,
           }}>
-            <option value="score">↕ Sort by Score</option>
-            <option value="contacts">↕ Sort by Contacts</option>
-            <option value="name">↕ Sort A–Z</option>
-          </select>
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-            {FILTERS.map(f => <FilterPill key={f.key} label={f.label} active={filterBy === f.key} onClick={() => setFilterBy(f.key)} />)}
-          </div>
+            <span>⚙ Filters</span>
+            {filterBy !== 'all' && (
+              <span style={{ background: '#2563eb', color: '#fff', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '1px 7px' }}>1</span>
+            )}
+          </button>
           <button onClick={toggleCompactList} style={{ marginTop: 8, fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid #e5e7eb', background: compactList ? '#eff6ff' : '#fff', color: compactList ? '#1d4ed8' : '#6b7280', cursor: 'pointer', fontWeight: 500 }}>
             {compactList ? '▾ Compact view' : '▸ Compact view'}
           </button>
@@ -609,6 +613,54 @@ export default function Accounts() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ACCOUNT FILTERS MODAL */}
+      {showAcctFilters && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(17,17,17,0.75)', zIndex: 1100, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 20px', overflowY: 'auto' }}
+          onClick={e => e.target === e.currentTarget && setShowAcctFilters(false)}>
+          <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 640, boxShadow: '0 24px 70px rgba(0,0,0,0.35)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 22px', borderBottom: '1px solid #eee' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>Filters</div>
+              <div style={{ position: 'relative', flex: 1, maxWidth: 260 }}>
+                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#9ca3af' }}>🔍</span>
+                <input value={acctFilterSearch} onChange={e => setAcctFilterSearch(e.target.value)} placeholder="Search filters…"
+                  style={{ width: '100%', padding: '7px 10px 7px 28px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#f9fafb' }} />
+              </div>
+              <div style={{ marginLeft: 'auto', fontSize: 12, color: '#9ca3af', whiteSpace: 'nowrap' }}>{totalCount} companies found</div>
+              <button onClick={() => setShowAcctFilters(false)} style={{ background: 'none', border: 'none', fontSize: 18, color: '#999', cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 28 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>Sort</div>
+                {['score','contacts','name'].filter(k => matchesAcctFilterSearch(k === 'score' ? 'Score' : k === 'contacts' ? 'Contacts' : 'A-Z')).map(k => (
+                  <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151', padding: '6px 0', cursor: 'pointer' }}>
+                    <input type="radio" name="acct-sort" checked={sortBy === k} onChange={() => setSortBy(k)} />
+                    {k === 'score' ? '↕ Score' : k === 'contacts' ? '↕ Contacts' : '↕ A–Z'}
+                  </label>
+                ))}
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>Signals</div>
+                {FILTERS.filter(f => matchesAcctFilterSearch(f.label.replace(/[^\w\s]/g, '').trim())).map(f => (
+                  <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151', padding: '6px 0', cursor: 'pointer' }}>
+                    <input type="radio" name="acct-signal" checked={filterBy === f.key} onChange={() => setFilterBy(f.key)} />
+                    {f.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid #eee' }}>
+              {filterBy !== 'all' && (
+                <button onClick={() => { setFilterBy('all'); setSortBy('score'); }}
+                  style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
+                  Clear filters
+                </button>
+              )}
+              <button onClick={() => setShowAcctFilters(false)} style={{ padding: '9px 22px', background: '#2563eb', color: '#fff', borderRadius: 9, fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer' }}>Apply Filters</button>
+            </div>
           </div>
         </div>
       )}
