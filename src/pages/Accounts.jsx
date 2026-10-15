@@ -1314,11 +1314,32 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
       if (result?.error) throw new Error(result.error);
       if (result.found) {
         const got = [result.email && 'email', result.linkedin_url && 'LinkedIn', result.company_linkedin_url && 'company LinkedIn'].filter(Boolean);
-        alert(got.length ? 'Enriched: ' + got.join(', ') : 'No new data found in Apollo');
+        const jobChangeMsg = result.job_change_detected ? `\n\n🔄 Job change detected: now ${result.job_change_new_title || ''}${result.job_change_new_company ? ' at ' + result.job_change_new_company : ''}` : '';
+        alert((got.length ? 'Enriched: ' + got.join(', ') : 'No new data found in Apollo') + jobChangeMsg);
         onUpdate();
       } else { alert('No match found in Apollo for this contact.'); }
     } catch(err) { alert('Enrichment failed: ' + err.message); }
     finally { setEnrichingContact(null); }
+  }
+
+  async function acceptJobChange(c) {
+    await supabase.from('contacts').update({
+      title: c.job_change_new_title,
+      company: c.job_change_new_company,
+      job_change_detected: false,
+      job_change_new_title: null,
+      job_change_new_company: null,
+    }).eq('id', c.id);
+    onUpdate();
+  }
+
+  async function dismissJobChange(c) {
+    await supabase.from('contacts').update({
+      job_change_detected: false,
+      job_change_new_title: null,
+      job_change_new_company: null,
+    }).eq('id', c.id);
+    onUpdate();
   }
 
   function toggleEnrichSelect(id) {
@@ -1852,6 +1873,13 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                   style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #7c3aed', background: enrichingContact === c.id ? '#ede9fe' : '#f5f3ff', color: '#7c3aed', cursor: 'pointer', fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap' }}>
                   {enrichingContact === c.id ? 'Enriching...' : '✨ Enrich'}
                 </button>
+              )}
+              {c.job_change_detected && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 6, background: '#fffbeb', border: '1px solid #fde68a', fontSize: 11, color: '#92400e', whiteSpace: 'nowrap' }}>
+                  <span>🔄 Now {c.job_change_new_title || 'a new role'}{c.job_change_new_company ? ' at ' + c.job_change_new_company : ''}</span>
+                  <button onClick={() => acceptJobChange(c)} style={{ padding: '2px 8px', borderRadius: 5, border: 'none', background: '#2563eb', color: '#fff', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>Update</button>
+                  <button onClick={() => dismissJobChange(c)} style={{ padding: '2px 8px', borderRadius: 5, border: '1px solid #e0e0e0', background: '#fff', color: '#888', fontSize: 10, cursor: 'pointer' }}>Dismiss</button>
+                </div>
               )}
                     {(c.status === 'Fresh' && !c.next_followup || c.status === 'cooling_off') && (
                         <button onClick={() => startContact(c)} disabled={qualifying === c.id} style={{
