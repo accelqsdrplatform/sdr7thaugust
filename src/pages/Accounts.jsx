@@ -40,6 +40,17 @@ function normalizeDomain(website) {
     .split('?')[0];
 }
 
+const ACCT_LEGAL_SUFFIX_RE = /\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company|group|plc|gmbh|pty|holdings|international|intl)\b\.?/g;
+function normalizeCompanyName(name) {
+  if (!name) return '';
+  return String(name)
+    .toLowerCase()
+    .replace(/[.,&]/g, ' ')
+    .replace(ACCT_LEGAL_SUFFIX_RE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function msUntilUnlock(ts) {
   if (!ts) return 0;
   const unlockAt = new Date(ts).getTime() + RESEARCH_LOCK_DAYS * 24 * 60 * 60 * 1000;
@@ -194,6 +205,12 @@ export default function Accounts() {
   const [newAcct, setNewAcct] = useState({ name: '', industry: '', country: '', linkedin_url: '', revenue_millions: '' });
   const [adding, setAdding] = useState(false);
   const [acctDupCandidates, setAcctDupCandidates] = useState([]);
+  const [hygieneOpen, setHygieneOpen] = useState(false);
+  const [hygieneLoading, setHygieneLoading] = useState(false);
+  const [hygieneGroups, setHygieneGroups] = useState([]);
+  const [hygieneKeep, setHygieneKeep] = useState({});
+  const [hygieneSelected, setHygieneSelected] = useState({});
+  const [hygieneMerging, setHygieneMerging] = useState(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -258,6 +275,95 @@ export default function Accounts() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { setPage(1); }, [filterBy, search, sortBy]);
+
+  async function runAccountHygiene() {
+    setHygieneOpen(true);
+    setHygieneLoading(true);
+    setHygieneGroups([]);
+    setHygieneKeep({});
+    setHygieneSelected({});
+
+    let q = supabase.from('accounts').select('id,name,website,owner_id,created_at');
+    if (!canViewAll) {
+      const { data: myContacts } = await supabase.from('contacts').select('account_id').eq('owner_id', user.id).not('account_id', 'is', null);
+      const ids = [...new Set((myContacts || []).map(c => c.account_id))];
+      if (ids.length === 0) { setHygieneLoading(false); return; }
+      q = q.in('id', ids);
+    }
+    const { data } = await q;
+    const all = data || [];
+
+    const byDomain = {};
+    const byName = {};
+    all.forEach(a => {
+      const d = normalizeDomain(a.website);
+      const n = normalizeCompanyName(a.name);
+      if (d) (byDomain[d] = byDomain[d] || []).push(a);
+      if (n) (byName[n] = byName[n] || []).push(a);
+    });
+
+    const byCreated = (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0);
+    const groups = [];
+    const inDomainGroup = new Set();
+
+    Object.entries(byDomain).forEach(([d, accs]) => {
+      if (accs.length > 1) {
+        accs.forEach(a => inDomainGroup.add(a.id));
+        groups.push({ key: 'domain:' + d, type: 'domain', matchKey: d, accounts: [...accs].sort(byCreated) });
+      }
+    });
+    Object.entries(byName).forEach(([n, accs]) => {
+      if (accs.length > 1 && !accs.every(a => inDomainGroup.has(a.id))) {
+        groups.push({ key: 'name:' + n, type: 'name', matchKey: n, accounts: [...accs].sort(byCreated) });
+      }
+    });
+    groups.sort((a, b) => a.accounts.length - b.accounts.length);
+
+    const keep = {};
+    const selected = {};
+    groups.forEach(g => {
+      const keepId = g.accounts[0].id;
+      keep[g.key] = keepId;
+      selected[g.key] = g.accounts.length === 2
+        ? new Set(g.accounts.filter(a => a.id !== keepId).map(a => a.id))
+        : new Set();
+    });
+
+    setHygieneGroups(groups);
+    setHygieneKeep(keep);
+    setHygieneSelected(selected);
+    setHygieneLoading(false);
+  }
+
+  function toggleHygieneSelected(groupKey, id) {
+    setHygieneSelected(prev => {
+      const next = new Set(prev[groupKey] || []);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return { ...prev, [groupKey]: next };
+    });
+  }
+
+  function setGroupKeep(groupKey, newKeepId) {
+    setHygieneKeep(prev => ({ ...prev, [groupKey]: newKeepId }));
+    setHygieneSelected(prev => {
+      const next = new Set(prev[groupKey] || []);
+      next.delete(newKeepId);
+      return { ...prev, [groupKey]: next };
+    });
+  }
+
+  async function mergeHygieneGroup(group) {
+    const keepId = hygieneKeep[group.key];
+    const dropIds = Array.from(hygieneSelected[group.key] || []).filter(id => id !== keepId);
+    if (dropIds.length === 0) return;
+    setHygieneMerging(group.key);
+    await supabase.from('contacts').update({ account_id: keepId }).in('account_id', dropIds);
+    await supabase.from('accounts').delete().in('id', dropIds);
+    setHygieneGroups(gs => gs.filter(g => g.key !== group.key));
+    setHygieneMerging(null);
+    fetchAll();
+  }
+
   useEffect(() => {
     if (location.state?.selectId) { setSelectedId(location.state.selectId); window.history.replaceState({}, ''); }
   }, [location.state]);
@@ -337,7 +443,11 @@ export default function Accounts() {
               </div>
               <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{filtered.length} of {accounts.length} companies</div>
             </div>
-            <button onClick={() => setShowAddAccount(true)} style={{
+            
+            <button onClick={runAccountHygiene} title="Find and merge likely duplicate accounts" style={{
+              padding: '6px 12px', background: '#fff', color: '#7c3aed', borderRadius: 8, marginRight: 6,
+              fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid #ddd6fe', letterSpacing: '0.01em',
+            }}>🧹 Hygiene</button><button onClick={() => setShowAddAccount(true)} style={{
               padding: '6px 14px', background: '#2563eb', color: '#fff', borderRadius: 8,
               fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none', letterSpacing: '0.01em',
             }}>+ Add</button>
@@ -441,6 +551,67 @@ export default function Accounts() {
           <AccountDetail key={selected.id} account={selected} contacts={contactsByAccount[selected.id] || []} onUpdate={fetchAll} navigate={navigate} />
         )}
       </div>
+
+      {/* ACCOUNT HYGIENE MODAL */}
+      {hygieneOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => e.target === e.currentTarget && setHygieneOpen(false)}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 24, width: 640, maxWidth: '95vw', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>🧹 Account Hygiene</div>
+              <button onClick={() => setHygieneOpen(false)} style={{ background: 'none', border: 'none', fontSize: 18, color: '#999', cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 16 }}>
+              Finds accounts that are likely the same company — same website domain, or the same name once suffixes like Inc/Corp/Group are stripped. Pairs are pre-checked to merge; groups of 3+ are usually a shared or incorrect website in the source data rather than real duplicates, so review each name before merging those.
+            </div>
+            {hygieneLoading && <div style={{ fontSize: 13, color: '#6b7280', padding: '20px 0', textAlign: 'center' }}>Scanning accounts…</div>}
+            {!hygieneLoading && hygieneGroups.length === 0 && (
+              <div style={{ fontSize: 13, color: '#059669', padding: '20px 0', textAlign: 'center' }}>✓ No likely duplicates found.</div>
+            )}
+
+            {!hygieneLoading && hygieneGroups.map(group => {
+              const keepId = hygieneKeep[group.key];
+              const selected = hygieneSelected[group.key] || new Set();
+              const merging = hygieneMerging === group.key;
+              return (
+                <div key={group.key} style={{ border: '1px solid #eee', borderRadius: 10, padding: 14, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
+                      {group.type === 'domain' ? `Same website: ${group.matchKey}` : `Same name: "${group.matchKey}"`}
+                    </div>
+                    <span style={{ fontSize: 11, color: '#9ca3af' }}>{group.accounts.length} accounts</span>
+                  </div>
+                  {group.accounts.length > 2 && (
+                    <div style={{ fontSize: 11, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '6px 8px', marginBottom: 8 }}>
+                      ⚠ Shared by {group.accounts.length} accounts — double-check these are really the same company before merging.
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                    {group.accounts.map(a => (
+                      <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#374151', padding: '4px 0' }}>
+                        <input type="radio" name={'keep-' + group.key} checked={keepId === a.id}
+                          onChange={() => setGroupKeep(group.key, a.id)} />
+                        {keepId !== a.id && (
+                          <input type="checkbox" checked={selected.has(a.id)}
+                            onChange={() => toggleHygieneSelected(group.key, a.id)} style={{ marginLeft: 2 }} />
+                        )}
+                        <span style={{ fontWeight: keepId === a.id ? 600 : 400 }}>{a.name}</span>
+                        {keepId === a.id && <span style={{ fontSize: 10, color: '#059669', fontWeight: 600 }}>KEEP</span>}
+                        <span style={{ fontSize: 10, color: '#9ca3af' }}>{a.website || 'no website'}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <button onClick={() => mergeHygieneGroup(group)} disabled={merging || selected.size === 0}
+                    style={{ padding: '6px 14px', background: selected.size === 0 ? '#e5e7eb' : '#dc2626', color: selected.size === 0 ? '#9ca3af' : '#fff',
+                      borderRadius: 7, fontSize: 12, fontWeight: 600, border: 'none', cursor: selected.size === 0 ? 'not-allowed' : 'pointer' }}>
+                    {merging ? 'Merging…' : `Merge ${selected.size} into kept account`}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ADD ACCOUNT MODAL */}
       {showAddAccount && (
