@@ -79,6 +79,7 @@ export default function Contacts() {
   const [companyFilter, setCompanyFilter]     = useState('');
   const [responseFilter, setResponseFilter]   = useState('');
   const [sourceFilter, setSourceFilter]       = useState('');
+  const [jobChangeFilter, setJobChangeFilter] = useState('');
   const [countryFilter, setCountryFilter]     = useState('');
   const [csvBatches, setCsvBatches]           = useState([]);
   const [batchFilter, setBatchFilter]         = useState('');
@@ -175,6 +176,7 @@ export default function Contacts() {
     if (sourceFilter === 'csv_import' && batchFilter) q = q.eq('import_batch_id', batchFilter);
     if (hasEmailFilter === 'yes') q = q.not('email', 'is', null);
     if (hasEmailFilter === 'no')  q = q.is('email', null);
+    if (jobChangeFilter === 'yes') q = q.eq('job_change_detected', true);
 
     if (listFilter) {
       const { data: lc } = await supabase.from('contact_lists').select('contact_id').eq('list_id', listFilter);
@@ -403,7 +405,7 @@ export default function Contacts() {
   // Effective industry: contact's own industry OR inherited from account
   function effectiveIndustry(c) { return c.accounts?.industry || ''; }
 
-  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo].filter(Boolean).length;
+  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter].filter(Boolean).length;
 
   const freshSelected = [...selected].filter(id => {
     const c = contacts.find(x => x.id === id);
@@ -561,7 +563,7 @@ export default function Contacts() {
           )}
         </button>
         {activeFilters > 0 && (
-          <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setListContactIds(new Set()); }}
+          <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setListContactIds(new Set()); }}
             style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
             Clear filters ({activeFilters})
           </button>
@@ -629,6 +631,13 @@ export default function Contacts() {
           <option value="">Has Email: All</option>
           <option value="yes">Has Email</option>
           <option value="no">No Email</option>
+        </select>
+        )}
+        {matchesFilterSearch('Recently Changed Jobs') && (
+        <select value={jobChangeFilter} onChange={e => setJobChangeFilter(e.target.value)}
+          style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (jobChangeFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: jobChangeFilter ? '#eff6ff' : '#fff', color: jobChangeFilter ? '#1d4ed8' : '#555' }}>
+          <option value="">Recently Changed Jobs: All</option>
+          <option value="yes">🔄 Changed Jobs</option>
         </select>
         )}
         {matchesFilterSearch('Company') && companies.length > 0 && (
@@ -720,7 +729,7 @@ export default function Contacts() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid #eee' }}>
               {activeFilters > 0 && (
-                <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setListContactIds(new Set()); }}
+                <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setListContactIds(new Set()); }}
                   style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
                   Clear filters ({activeFilters})
                 </button>
