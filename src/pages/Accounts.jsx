@@ -194,6 +194,15 @@ export default function Accounts() {
   function matchesAcctFilterSearch(label) {
     return !acctFilterSearch.trim() || label.toLowerCase().includes(acctFilterSearch.trim().toLowerCase());
   }
+  const [acctIndustryFilter, setAcctIndustryFilter] = useState('');
+  const [acctHeadcountFilter, setAcctHeadcountFilter] = useState('');
+  const [acctLastTouchedFrom, setAcctLastTouchedFrom] = useState('');
+  const [acctLastTouchedTo, setAcctLastTouchedTo] = useState('');
+  const [acctNeverTouched, setAcctNeverTouched] = useState(false);
+  const [acctFreshCountFilter, setAcctFreshCountFilter] = useState('');
+  const [acctIndustryOptions, setAcctIndustryOptions] = useState([]);
+  const activeAcctFilterCount = (filterBy !== 'all' ? 1 : 0) + (acctIndustryFilter ? 1 : 0) + (acctHeadcountFilter ? 1 : 0)
+    + (acctNeverTouched || acctLastTouchedFrom || acctLastTouchedTo ? 1 : 0) + (acctFreshCountFilter ? 1 : 0);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
   const [totalCount, setTotalCount] = useState(0);
@@ -244,6 +253,21 @@ export default function Accounts() {
     if (filterBy === 'signals') q = q.or('has_legacy_tool.eq.true,is_hiring_qa.eq.true,is_funded.eq.true,has_outage.eq.true,has_leadership_change.eq.true');
     if (filterBy === 'notes') q = q.eq('has_notes', true);
 
+    if (acctIndustryFilter) q = q.eq('industry', acctIndustryFilter);
+    if (acctHeadcountFilter === '1-50') q = q.gte('employee_count', 1).lte('employee_count', 50);
+    else if (acctHeadcountFilter === '51-200') q = q.gte('employee_count', 51).lte('employee_count', 200);
+    else if (acctHeadcountFilter === '201-1000') q = q.gte('employee_count', 201).lte('employee_count', 1000);
+    else if (acctHeadcountFilter === '1000+') q = q.gte('employee_count', 1001);
+    if (acctNeverTouched) q = q.is('last_touch_date', null);
+    else {
+      if (acctLastTouchedFrom) q = q.gte('last_touch_date', acctLastTouchedFrom);
+      if (acctLastTouchedTo) q = q.lte('last_touch_date', acctLastTouchedTo);
+    }
+    if (acctFreshCountFilter === '0') q = q.eq('fresh_contact_count', 0);
+    else if (acctFreshCountFilter === '1-5') q = q.gte('fresh_contact_count', 1).lte('fresh_contact_count', 5);
+    else if (acctFreshCountFilter === '6-15') q = q.gte('fresh_contact_count', 6).lte('fresh_contact_count', 15);
+    else if (acctFreshCountFilter === '16+') q = q.gte('fresh_contact_count', 16);
+
     if (search) {
       const s = `%${search}%`;
       q = q.or(`name.ilike.${s},industry.ilike.${s},country.ilike.${s}`);
@@ -251,6 +275,9 @@ export default function Accounts() {
 
     if (sortBy === 'score') q = q.order('score', { ascending: false });
     else if (sortBy === 'contacts') q = q.order('contact_count', { ascending: false });
+    else if (sortBy === 'headcount') q = q.order('employee_count', { ascending: false, nullsFirst: false });
+    else if (sortBy === 'stale') q = q.order('last_touch_date', { ascending: true, nullsFirst: true });
+    else if (sortBy === 'fresh') q = q.order('fresh_contact_count', { ascending: false });
     else q = q.order('name', { ascending: true });
 
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
@@ -276,10 +303,18 @@ export default function Accounts() {
       setContactsByAccount({});
     }
     setLoading(false);
-  }, [user.id, canViewAll, filterBy, search, sortBy, page]);
+  }, [user.id, canViewAll, filterBy, search, sortBy, page, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-  useEffect(() => { setPage(1); }, [filterBy, search, sortBy]);
+  useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter]);
+
+  useEffect(() => {
+    supabase.from('accounts').select('industry').not('industry', 'is', null).neq('industry', '')
+      .then(({ data }) => {
+        const uniq = [...new Set((data || []).map(r => r.industry).filter(Boolean))].sort();
+        setAcctIndustryOptions(uniq);
+      });
+  }, []);
 
   async function runAccountHygiene() {
     setHygieneOpen(true);
@@ -418,6 +453,11 @@ export default function Accounts() {
     { key: 'notes', label: '📝 Notes' },
   ];
 
+  const ACCT_SORT_OPTIONS = [
+    ['score', '↕ Score'], ['contacts', '↕ Contacts'], ['headcount', '↕ Headcount'],
+    ['stale', '↕ Most Stale'], ['fresh', '↕ Most Unstarted Contacts'], ['name', '↕ A–Z'],
+  ];
+
   // Filtering, search, and sorting now happen server-side in fetchAll (see above)
   // against accounts_with_stats, so 'accounts' is already the correct page of results.
   const filtered = accounts;
@@ -464,12 +504,12 @@ export default function Accounts() {
           </div>
           <button onClick={() => setShowAcctFilters(true)} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '7px 10px', borderRadius: 8,
-            border: '1px solid ' + (filterBy !== 'all' ? '#2563eb' : '#e0e0e0'), background: filterBy !== 'all' ? '#eff6ff' : '#fff',
-            color: filterBy !== 'all' ? '#1d4ed8' : '#555', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 10,
+            border: '1px solid ' + (activeAcctFilterCount > 0 ? '#2563eb' : '#e0e0e0'), background: activeAcctFilterCount > 0 ? '#eff6ff' : '#fff',
+            color: activeAcctFilterCount > 0 ? '#1d4ed8' : '#555', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 10,
           }}>
             <span>⚙ Filters</span>
-            {filterBy !== 'all' && (
-              <span style={{ background: '#2563eb', color: '#fff', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '1px 7px' }}>1</span>
+            {activeAcctFilterCount > 0 && (
+              <span style={{ background: '#2563eb', color: '#fff', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '1px 7px' }}>{activeAcctFilterCount}</span>
             )}
           </button>
           <button onClick={toggleCompactList} style={{ marginTop: 8, fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid #e5e7eb', background: compactList ? '#eff6ff' : '#fff', color: compactList ? '#1d4ed8' : '#6b7280', cursor: 'pointer', fontWeight: 500 }}>
@@ -632,13 +672,13 @@ export default function Accounts() {
               <div style={{ marginLeft: 'auto', fontSize: 12, color: '#9ca3af', whiteSpace: 'nowrap' }}>{totalCount} companies found</div>
               <button onClick={() => setShowAcctFilters(false)} style={{ background: 'none', border: 'none', fontSize: 18, color: '#999', cursor: 'pointer' }}>✕</button>
             </div>
-            <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 28 }}>
+            <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24 }}>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>Sort</div>
-                {['score','contacts','name'].filter(k => matchesAcctFilterSearch(k === 'score' ? 'Score' : k === 'contacts' ? 'Contacts' : 'A-Z')).map(k => (
+                {ACCT_SORT_OPTIONS.filter(([,label]) => matchesAcctFilterSearch(label.replace(/[^\w\s]/g, '').trim())).map(([k, label]) => (
                   <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151', padding: '6px 0', cursor: 'pointer' }}>
                     <input type="radio" name="acct-sort" checked={sortBy === k} onChange={() => setSortBy(k)} />
-                    {k === 'score' ? '↕ Score' : k === 'contacts' ? '↕ Contacts' : '↕ A–Z'}
+                    {label}
                   </label>
                 ))}
               </div>
@@ -651,12 +691,62 @@ export default function Accounts() {
                   </label>
                 ))}
               </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>Company Profile</div>
+                {matchesAcctFilterSearch('Industry') && acctIndustryOptions.length > 0 && (
+                  <select value={acctIndustryFilter} onChange={e => setAcctIndustryFilter(e.target.value)}
+                    style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (acctIndustryFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: acctIndustryFilter ? '#eff6ff' : '#fff', color: acctIndustryFilter ? '#1d4ed8' : '#555' }}>
+                    <option value="">Industry: All</option>
+                    {acctIndustryOptions.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+                  </select>
+                )}
+                {matchesAcctFilterSearch('Headcount') && (
+                  <select value={acctHeadcountFilter} onChange={e => setAcctHeadcountFilter(e.target.value)}
+                    style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (acctHeadcountFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: acctHeadcountFilter ? '#eff6ff' : '#fff', color: acctHeadcountFilter ? '#1d4ed8' : '#555' }}>
+                    <option value="">Headcount: All</option>
+                    <option value="1-50">1 – 50</option>
+                    <option value="51-200">51 – 200</option>
+                    <option value="201-1000">201 – 1,000</option>
+                    <option value="1000+">1,000+</option>
+                  </select>
+                )}
+                {matchesAcctFilterSearch('Contacts Yet To Start') && (
+                  <select value={acctFreshCountFilter} onChange={e => setAcctFreshCountFilter(e.target.value)}
+                    style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (acctFreshCountFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: acctFreshCountFilter ? '#eff6ff' : '#fff', color: acctFreshCountFilter ? '#1d4ed8' : '#555' }}>
+                    <option value="">Contacts Yet To Start: All</option>
+                    <option value="0">0 (fully worked)</option>
+                    <option value="1-5">1 – 5</option>
+                    <option value="6-15">6 – 15</option>
+                    <option value="16+">16+</option>
+                  </select>
+                )}
+                {matchesAcctFilterSearch('Last Touched') && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, color: acctNeverTouched || acctLastTouchedFrom || acctLastTouchedTo ? '#1d4ed8' : '#555', marginBottom: 6 }}>Last Touched</div>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                      <input type="date" value={acctLastTouchedFrom} disabled={acctNeverTouched} onChange={e => setAcctLastTouchedFrom(e.target.value)}
+                        style={{ width: '50%', padding: '6px 8px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 12 }} />
+                      <input type="date" value={acctLastTouchedTo} disabled={acctNeverTouched} onChange={e => setAcctLastTouchedTo(e.target.value)}
+                        style={{ width: '50%', padding: '6px 8px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 12 }} />
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={acctNeverTouched} onChange={e => { setAcctNeverTouched(e.target.checked); if (e.target.checked) { setAcctLastTouchedFrom(''); setAcctLastTouchedTo(''); } }} />
+                      Never touched
+                    </label>
+                  </div>
+                )}
+              </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid #eee' }}>
-              {filterBy !== 'all' && (
-                <button onClick={() => { setFilterBy('all'); setSortBy('score'); }}
+              {activeAcctFilterCount > 0 && (
+                <button onClick={() => {
+                  setFilterBy('all'); setSortBy('score');
+                  setAcctIndustryFilter(''); setAcctHeadcountFilter('');
+                  setAcctLastTouchedFrom(''); setAcctLastTouchedTo(''); setAcctNeverTouched(false);
+                  setAcctFreshCountFilter('');
+                }}
                   style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
-                  Clear filters
+                  Clear filters ({activeAcctFilterCount})
                 </button>
               )}
               <button onClick={() => setShowAcctFilters(false)} style={{ padding: '9px 22px', background: '#2563eb', color: '#fff', borderRadius: 9, fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer' }}>Apply Filters</button>
