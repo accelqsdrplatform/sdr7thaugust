@@ -80,6 +80,11 @@ export default function Contacts() {
   const [responseFilter, setResponseFilter]   = useState('');
   const [sourceFilter, setSourceFilter]       = useState('');
   const [jobChangeFilter, setJobChangeFilter] = useState('');
+  const [headcountFilter, setHeadcountFilter] = useState('');
+  const [acctLastTouchFrom, setAcctLastTouchFrom] = useState('');
+  const [acctLastTouchTo, setAcctLastTouchTo] = useState('');
+  const [acctNeverTouched, setAcctNeverTouched] = useState(false);
+  const [freshCountFilter, setFreshCountFilter] = useState('');
   const [countryFilter, setCountryFilter]     = useState('');
   const [csvBatches, setCsvBatches]           = useState([]);
   const [batchFilter, setBatchFilter]         = useState('');
@@ -113,9 +118,9 @@ export default function Contacts() {
     }
   }, [sourceFilter, user.id]);
 
-  useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo]);
+  useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched]);
 
-  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, page]);
+  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched, page]);
 
   async function fetchFilterOptions() {
     const { data } = await supabase
@@ -150,10 +155,27 @@ export default function Contacts() {
       q = q.or(`first_name.ilike.${s},last_name.ilike.${s},email.ilike.${s},company.ilike.${s}`);
     }
 
-    if (industryFilter || countryFilter) {
-      let accQ = supabase.from('accounts').select('id');
+    if (industryFilter || countryFilter || headcountFilter || acctNeverTouched || acctLastTouchFrom || acctLastTouchTo || freshCountFilter) {
+      // These five filters live on the account, not the contact, so we resolve the
+      // matching account ids first (via accounts_with_stats, which carries
+      // fresh_contact_count + last_touch_date alongside the plain account columns)
+      // and then scope the contacts query to those accounts.
+      let accQ = supabase.from('accounts_with_stats').select('id');
       if (industryFilter) accQ = accQ.eq('industry', industryFilter);
       if (countryFilter) accQ = accQ.eq('country', countryFilter);
+      if (headcountFilter === '1-50') accQ = accQ.gte('employee_count', 1).lte('employee_count', 50);
+      else if (headcountFilter === '51-200') accQ = accQ.gte('employee_count', 51).lte('employee_count', 200);
+      else if (headcountFilter === '201-1000') accQ = accQ.gte('employee_count', 201).lte('employee_count', 1000);
+      else if (headcountFilter === '1000+') accQ = accQ.gte('employee_count', 1001);
+      if (acctNeverTouched) accQ = accQ.is('last_touch_date', null);
+      else {
+        if (acctLastTouchFrom) accQ = accQ.gte('last_touch_date', acctLastTouchFrom);
+        if (acctLastTouchTo) accQ = accQ.lte('last_touch_date', acctLastTouchTo);
+      }
+      if (freshCountFilter === '0') accQ = accQ.eq('fresh_contact_count', 0);
+      else if (freshCountFilter === '1-5') accQ = accQ.gte('fresh_contact_count', 1).lte('fresh_contact_count', 5);
+      else if (freshCountFilter === '6-15') accQ = accQ.gte('fresh_contact_count', 6).lte('fresh_contact_count', 15);
+      else if (freshCountFilter === '16+') accQ = accQ.gte('fresh_contact_count', 16);
       const { data: accRows } = await accQ;
       const accIds = (accRows || []).map(a => a.id);
       if (accIds.length > 0) {
@@ -405,7 +427,7 @@ export default function Contacts() {
   // Effective industry: contact's own industry OR inherited from account
   function effectiveIndustry(c) { return c.accounts?.industry || ''; }
 
-  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter].filter(Boolean).length;
+  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched].filter(Boolean).length;
 
   const freshSelected = [...selected].filter(id => {
     const c = contacts.find(x => x.id === id);
@@ -563,7 +585,7 @@ export default function Contacts() {
           )}
         </button>
         {activeFilters > 0 && (
-          <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setListContactIds(new Set()); }}
+          <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setHeadcountFilter(''); setFreshCountFilter(''); setAcctLastTouchFrom(''); setAcctLastTouchTo(''); setAcctNeverTouched(false); setListContactIds(new Set()); }}
             style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
             Clear filters ({activeFilters})
           </button>
@@ -639,6 +661,41 @@ export default function Contacts() {
           <option value="">Recently Changed Jobs: All</option>
           <option value="yes">🔄 Changed Jobs</option>
         </select>
+        )}
+        {matchesFilterSearch('Headcount') && (
+        <select value={headcountFilter} onChange={e => setHeadcountFilter(e.target.value)}
+          style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (headcountFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: headcountFilter ? '#eff6ff' : '#fff', color: headcountFilter ? '#1d4ed8' : '#555' }}>
+          <option value="">Headcount: All</option>
+          <option value="1-50">1 – 50</option>
+          <option value="51-200">51 – 200</option>
+          <option value="201-1000">201 – 1,000</option>
+          <option value="1000+">1,000+</option>
+        </select>
+        )}
+        {matchesFilterSearch('Contacts Yet To Start') && (
+        <select value={freshCountFilter} onChange={e => setFreshCountFilter(e.target.value)}
+          style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (freshCountFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: freshCountFilter ? '#eff6ff' : '#fff', color: freshCountFilter ? '#1d4ed8' : '#555' }}>
+          <option value="">Account's Contacts Yet To Start: All</option>
+          <option value="0">0 (fully worked)</option>
+          <option value="1-5">1 – 5</option>
+          <option value="6-15">6 – 15</option>
+          <option value="16+">16+</option>
+        </select>
+        )}
+        {matchesFilterSearch('Account Last Touched') && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 12, color: acctNeverTouched || acctLastTouchFrom || acctLastTouchTo ? '#1d4ed8' : '#555', marginBottom: 6 }}>Account Last Touched</div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+            <input type="date" value={acctLastTouchFrom} disabled={acctNeverTouched} onChange={e => setAcctLastTouchFrom(e.target.value)}
+              style={{ width: '50%', padding: '6px 8px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 12 }} />
+            <input type="date" value={acctLastTouchTo} disabled={acctNeverTouched} onChange={e => setAcctLastTouchTo(e.target.value)}
+              style={{ width: '50%', padding: '6px 8px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 12 }} />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151', cursor: 'pointer' }}>
+            <input type="checkbox" checked={acctNeverTouched} onChange={e => { setAcctNeverTouched(e.target.checked); if (e.target.checked) { setAcctLastTouchFrom(''); setAcctLastTouchTo(''); } }} />
+            Never touched (account-wide)
+          </label>
+        </div>
         )}
         {matchesFilterSearch('Company') && companies.length > 0 && (
           <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)}
@@ -729,7 +786,7 @@ export default function Contacts() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid #eee' }}>
               {activeFilters > 0 && (
-                <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setListContactIds(new Set()); }}
+                <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setHeadcountFilter(''); setFreshCountFilter(''); setAcctLastTouchFrom(''); setAcctLastTouchTo(''); setAcctNeverTouched(false); setListContactIds(new Set()); }}
                   style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
                   Clear filters ({activeFilters})
                 </button>
