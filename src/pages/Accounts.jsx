@@ -544,9 +544,11 @@ export default function Accounts() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</div>
                     <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
-                      {ctcs.length} contact{ctcs.length !== 1 ? 's' : ''}
-                      {a.industry ? ` · ${a.industry}` : ''}
-                      {a.country ? ` · ${a.country}` : ''}
+                      {(() => {
+                        const freshCt = ctcs.filter(c => c.status === 'Fresh').length;
+                        const contactedCt = ctcs.length - freshCt;
+                        return `${ctcs.length} contact${ctcs.length !== 1 ? 's' : ''} · ${contactedCt} contacted · ${freshCt} to start`;
+                      })()}
                     </div>
                   </div>
                   <div style={{ textAlign: 'center', flexShrink: 0 }}>
