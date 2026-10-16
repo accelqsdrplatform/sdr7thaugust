@@ -535,6 +535,14 @@ export default function ContactDetail() {
             <InfoRow label="Added on" value={contact.created_at ? new Date(contact.created_at).toLocaleDateString() : null} />
             {contact.bounced && <InfoRow label="Bounced on" value={contact.bounced_at ? new Date(contact.bounced_at).toLocaleDateString() : 'Yes'} danger />}
           </InfoCard>
+          {contact.company && (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <NoteSection title={`Company Notes — ${contact.company}`} subtitle="Shared across all SDRs on this account"
+                notes={companyNotes} newNote={newCompanyNote} onChangeNote={setNewCompanyNote}
+                onAdd={addCompanyNote} saving={savingNote} placeholder={`Add a note about ${contact.company}…`} isCompany
+                onEdit={(noteId, body) => editNote('company_notes', noteId, body)} />
+            </div>
+          )}
           <div style={{ gridColumn: '1 / -1' }}>
             <InfoCard title="Pitch & Persona">
               <div style={{ padding: '4px 0' }}>
