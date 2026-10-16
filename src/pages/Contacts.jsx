@@ -40,6 +40,11 @@ export default function Contacts() {
   const [marking, setMarking] = useState(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  // ── Quick contact note popover ──
+  const [contactNotesMap, setContactNotesMap] = useState({});
+  const [notePopover, setNotePopover] = useState(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -121,6 +126,31 @@ export default function Contacts() {
   useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched]);
 
   useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched, page]);
+
+  useEffect(() => {
+    const ids = contacts.map(c => c.id);
+    if (!ids.length) { setContactNotesMap({}); return; }
+    supabase.from('contact_notes').select('contact_id,body,created_at').in('contact_id', ids).order('created_at', { ascending: false })
+      .then(({ data: rows }) => {
+        const m = {};
+        (rows || []).forEach(r => { if (!m[r.contact_id]) m[r.contact_id] = r.body; });
+        setContactNotesMap(m);
+      });
+  }, [contacts]);
+
+  async function saveContactNote(c) {
+    if (!noteDraft.trim()) return;
+    setSavingNote(true);
+    await supabase.from('contact_notes').insert({
+      contact_id: c.id,
+      author_id: user.id,
+      body: noteDraft.trim(),
+    });
+    setSavingNote(false);
+    setContactNotesMap(m => ({ ...m, [c.id]: noteDraft.trim() }));
+    setNoteDraft('');
+    setNotePopover(null);
+  }
 
   async function fetchFilterOptions() {
     const { data } = await supabase
@@ -888,6 +918,37 @@ export default function Contacts() {
                         style={{ fontSize: 11, padding: '3px 6px', borderRadius: 6, border: '1px solid #e0e0e0', cursor: 'pointer', background: '#fff' }}>
                         {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
+                      <div style={{ position: 'relative', flexShrink: 0 }}>
+                        <button onClick={() => { setNotePopover(notePopover === c.id ? null : c.id); setNoteDraft(''); }}
+                          title={contactNotesMap[c.id] ? contactNotesMap[c.id] : 'Add a note'}
+                          style={{ fontSize: 11, padding: '3px 7px', borderRadius: 6, border: '1px solid #e5e7eb', background: contactNotesMap[c.id] ? '#fef9c3' : '#fff', color: '#92400e', cursor: 'pointer' }}>
+                          📝
+                        </button>
+                        {notePopover === c.id && (
+                          <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 20, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', padding: 12, width: 260 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#111', marginBottom: 6 }}>
+                              Add note for {contactName(c)}
+                            </div>
+                            {contactNotesMap[c.id] && (
+                              <div style={{ fontSize: 11, color: '#7c3aed', fontStyle: 'italic', marginBottom: 8, background: '#faf5ff', padding: 6, borderRadius: 6 }}>
+                                "{contactNotesMap[c.id]}"
+                              </div>
+                            )}
+                            <textarea value={noteDraft} onChange={e => setNoteDraft(e.target.value)} placeholder="Type a note…" rows={3} autoFocus
+                              style={{ width: '100%', fontSize: 12, padding: 8, borderRadius: 6, border: '1px solid #ddd', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8 }}>
+                              <button onClick={() => { setNotePopover(null); setNoteDraft(''); }}
+                                style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#666', cursor: 'pointer' }}>
+                                Cancel
+                              </button>
+                              <button onClick={() => saveContactNote(c)} disabled={savingNote || !noteDraft.trim()}
+                                style={{ fontSize: 12, padding: '5px 12px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', cursor: savingNote || !noteDraft.trim() ? 'not-allowed' : 'pointer', opacity: savingNote || !noteDraft.trim() ? 0.6 : 1, fontWeight: 600 }}>
+                                {savingNote ? 'Saving…' : 'Save'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       <button
                         onClick={() => setDeleteConfirm({ id: c.id, name: contactName(c) })}
                         style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer' }}>
