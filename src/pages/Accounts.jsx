@@ -883,6 +883,8 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const [bulkEnriching, setBulkEnriching] = useState(null);
   const [liDraft, setLiDraft] = useState('');
   const [savedLinkedInUrls, setSavedLinkedInUrls] = useState({});
+  // ── Multi-select pitch types popover ──
+  const [pitchPopover, setPitchPopover] = useState(null);
 
   const score = calcScore(data, contacts);
   const sc = scoreColor(score);
@@ -1024,6 +1026,16 @@ setSaving(false);
   async function updateContactPitchType(cId, pt) {
     const val = pt === '' ? null : pt;
     await supabase.from('contacts').update({ pitch_type: val }).eq('id', cId);
+    onUpdate();
+  }
+
+  // Toggles one platform in a contact's pitch_types array. Also keeps the
+  // legacy pitch_type column pointed at the first selected platform, so any
+  // older code/report still reading pitch_type singular keeps working.
+  async function toggleContactPitchType(c, platform) {
+    const current = Array.isArray(c.pitch_types) ? c.pitch_types : (c.pitch_type ? [c.pitch_type] : []);
+    const next = current.includes(platform) ? current.filter(p => p !== platform) : [...current, platform];
+    await supabase.from('contacts').update({ pitch_types: next, pitch_type: next[0] || null }).eq('id', c.id);
     onUpdate();
   }
 
@@ -1894,11 +1906,31 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                       </div>
                       <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 8, background: sc2.bg, color: sc2.color, flexShrink: 0 }}>{c.status}</span>
 <div style={{ display: 'flex', gap: 4, flexBasis: '100%', paddingLeft: 54, marginTop: -4 }}>
-                <select value={c.pitch_type || ''} onChange={e => updateContactPitchType(c.id, e.target.value)}
-                  style={{ fontSize: 10, padding: '2px 4px', borderRadius: 5, border: '1px solid #e0e0e0', background: c.pitch_type ? '#eff6ff' : '#fff', color: c.pitch_type ? '#1d4ed8' : '#999', maxWidth: 110, cursor: 'pointer' }}>
-                  <option value=''>Pitch type...</option>
-                  {PITCH_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  {(() => { const cTypes = Array.isArray(c.pitch_types) ? c.pitch_types : (c.pitch_type ? [c.pitch_type] : []); return (
+                  <button type='button' onClick={() => setPitchPopover(pitchPopover === c.id ? null : c.id)}
+                    style={{ fontSize: 10, padding: '2px 6px', borderRadius: 5, border: '1px solid #e0e0e0', background: cTypes.length ? '#eff6ff' : '#fff', color: cTypes.length ? '#1d4ed8' : '#999', maxWidth: 150, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {cTypes.length ? cTypes.join(' + ') : 'Pitch type(s)...'}
+                  </button>
+                  ); })()}
+                  {pitchPopover === c.id && (
+                    <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 20, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', padding: 10, width: 190, maxHeight: 220, overflowY: 'auto' }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#111', marginBottom: 6 }}>Platforms this account runs</div>
+                      {PITCH_TYPES.map(p => {
+                        const cTypes = Array.isArray(c.pitch_types) ? c.pitch_types : (c.pitch_type ? [c.pitch_type] : []);
+                        const checked = cTypes.includes(p);
+                        return (
+                          <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '3px 2px', cursor: 'pointer', color: '#374151' }}>
+                            <input type='checkbox' checked={checked} onChange={() => toggleContactPitchType(c, p)} />
+                            {p}
+                          </label>
+                        );
+                      })}
+                      <button type='button' onClick={() => setPitchPopover(null)}
+                        style={{ marginTop: 6, fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#666', cursor: 'pointer', width: '100%' }}>Done</button>
+                    </div>
+                  )}
+                </div>
                 <select value={c.persona || ''} onChange={e => updateContactPersona(c.id, e.target.value)}
                   style={{ fontSize: 10, padding: '2px 4px', borderRadius: 5, border: '1px solid #e0e0e0', background: c.persona ? '#f0fdf4' : '#fff', color: c.persona ? '#166534' : '#999', maxWidth: 110, cursor: 'pointer' }}>
                   <option value=''>Persona...</option>
