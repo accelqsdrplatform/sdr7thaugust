@@ -1037,7 +1037,7 @@ export default function Contacts() {
                                 {c.company && <span>{c.company}</span>}
                                 {c.phone && <span>{c.phone}</span>}
                                 {c.persona && <span style={{ color: '#7c3aed' }}>{c.persona}</span>}
-                                {c.pitch_type && <span style={{ color: '#2563eb' }}>{c.pitch_type}</span>}
+                                {(Array.isArray(c.pitch_types) && c.pitch_types.length > 0 ? c.pitch_types : (c.pitch_type ? [c.pitch_type] : [])).length > 0 && <span style={{ color: '#2563eb' }}>{(Array.isArray(c.pitch_types) && c.pitch_types.length > 0 ? c.pitch_types : [c.pitch_type]).join(' + ')}</span>}
                               </div>
                             </div>
                             <div style={{ textAlign: 'right', fontSize: 11, color: '#aaa', whiteSpace: 'nowrap' }}>
