@@ -840,7 +840,6 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const [showAddSaas, setShowAddSaas] = useState(false);
   const [newCustomSection, setNewCustomSection] = useState('');
   const [showAddCustom, setShowAddCustom] = useState(false);
-  const [contactNotesMap, setContactNotesMap] = useState({});
   const [companyNotesList, setCompanyNotesList] = useState([]);
   const [newCompanyNoteText, setNewCompanyNoteText] = useState('');
   const [savingCompanyNote, setSavingCompanyNote] = useState(false);
@@ -874,10 +873,6 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const [csvImportResult, setCsvImportResult] = useState(null);
   // ── LinkedIn inline edit ──
   const [editLI4Contact, setEditLI4Contact] = useState(null);
-  // ── Quick contact note popover ──
-  const [notePopover, setNotePopover] = useState(null);
-  const [noteDraft, setNoteDraft] = useState('');
-  const [savingNote, setSavingNote] = useState(false);
   const [enrichingContact, setEnrichingContact] = useState(null);
   const [selectedEnrich, setSelectedEnrich] = useState(new Set());
   const [bulkEnriching, setBulkEnriching] = useState(null);
@@ -973,16 +968,6 @@ setSaving(false);
     })();
     return () => { cancelled = true; };
   }, [account.id]);
-  useEffect(() => {
-    const ids = contacts.map(c => c.id);
-    if (!ids.length) { setContactNotesMap({}); return; }
-    supabase.from('contact_notes').select('contact_id,body,created_at').in('contact_id', ids).order('created_at', { ascending: false })
-      .then(({ data: rows }) => {
-        const m = {};
-        (rows || []).forEach(r => { if (!m[r.contact_id]) m[r.contact_id] = r.body; });
-        setContactNotesMap(m);
-      });
-  }, [contacts]);
   async function addCompanyNote() {
     if (!newCompanyNoteText.trim()) return;
     setSavingCompanyNote(true);
@@ -1026,19 +1011,6 @@ setSaving(false);
     onUpdate();
   }
 
-  async function saveContactNote(c) {
-    if (!noteDraft.trim()) return;
-    setSavingNote(true);
-    await supabase.from('contact_notes').insert({
-      contact_id: c.id,
-      author_id: user.id,
-      body: noteDraft.trim(),
-    });
-    setSavingNote(false);
-    setNoteDraft('');
-    setNotePopover(null);
-    onUpdate();
-  }
   async function bulkDeleteSelected() {
     const ids = [...selectedEnrich];
     if (ids.length === 0) return;
@@ -1915,7 +1887,6 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{(c.first_name + ' ' + (c.last_name || '')).trim()}</div>
                         <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{c.title || ''}</div>
-                        {contactNotesMap[c.id] && <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 4, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 380 }}>"{contactNotesMap[c.id]}"</div>}
                       </div>
                       <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 8, background: sc2.bg, color: sc2.color, flexShrink: 0 }}>{c.status}</span>
 <div style={{ display: 'flex', gap: 4, flexBasis: '100%', paddingLeft: 54, marginTop: -4 }}>
@@ -1988,32 +1959,6 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                           📬 In Queue
                         </span>
                       )}
-                      <div style={{ position: 'relative', flexShrink: 0 }}>
-                        <button onClick={() => { setNotePopover(notePopover === c.id ? null : c.id); setNoteDraft(''); }}
-                          title="Add a note"
-                          style={{ fontSize: 14, padding: '6px 8px', borderRadius: 8, border: '1px solid #e5e7eb', background: contactNotesMap[c.id] ? '#fef9c3' : '#fff', color: '#92400e', cursor: 'pointer' }}>
-                          📝
-                        </button>
-                        {notePopover === c.id && (
-                          <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 20, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', padding: 12, width: 260 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: '#111', marginBottom: 6 }}>
-                              Add note for {(c.first_name + ' ' + (c.last_name || '')).trim()}
-                            </div>
-                            <textarea value={noteDraft} onChange={e => setNoteDraft(e.target.value)} placeholder="Type a note…" rows={3} autoFocus
-                              style={{ width: '100%', fontSize: 12, padding: 8, borderRadius: 6, border: '1px solid #ddd', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8 }}>
-                              <button onClick={() => { setNotePopover(null); setNoteDraft(''); }}
-                                style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#666', cursor: 'pointer' }}>
-                                Cancel
-                              </button>
-                              <button onClick={() => saveContactNote(c)} disabled={savingNote || !noteDraft.trim()}
-                                style={{ fontSize: 12, padding: '5px 12px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', cursor: savingNote || !noteDraft.trim() ? 'not-allowed' : 'pointer', opacity: savingNote || !noteDraft.trim() ? 0.6 : 1, fontWeight: 600 }}>
-                                {savingNote ? 'Saving…' : 'Save'}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
                       <button onClick={() => navigate(`/contacts/${c.id}`, { state: { from: 'account', accountId: data.id, accountName: data.name } })}
                         style={{ fontSize: 12, padding: '6px 14px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', color: '#2563eb', cursor: 'pointer', fontWeight: 500, flexShrink: 0 }}>
                         View →
