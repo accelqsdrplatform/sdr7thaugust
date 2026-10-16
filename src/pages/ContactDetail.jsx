@@ -114,6 +114,7 @@ export default function ContactDetail() {
   const [savingPersona, setSavingPersona] = useState(false);
   const [personaSaved, setPersonaSaved] = useState(false);
   const [pitchType, setPitchType] = useState('');
+  const [pitchTypes, setPitchTypes] = useState([]);
   const [campaign, setCampaign] = useState('');
 
   const [timeline, setTimeline] = useState([]);
@@ -130,6 +131,7 @@ export default function ContactDetail() {
       setPitch(data.pitch || '');
       setPersona(data.persona || '');
       setPitchType(data.pitch_type || '');
+      setPitchTypes(Array.isArray(data.pitch_types) && data.pitch_types.length > 0 ? data.pitch_types : (data.pitch_type ? [data.pitch_type] : []));
       setCampaign(data.campaign || '');
       // Auto-infer persona and pitch_type from title if not set
       if ((!data.persona || !data.pitch_type) && data.title) {
@@ -580,21 +582,27 @@ export default function ContactDetail() {
               </div>
               <div style={{marginTop:16}}>
                 <label style={{display:'block',fontSize:11,fontWeight:600,color:'#555',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.3px'}}>Pitch Type</label>
-                <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                  <select value={pitchType} onChange={e => setPitchType(e.target.value)}
-                    style={{flex:1,padding:'8px 12px',borderRadius:8,border:'1px solid #e0e0e0',fontSize:13,color:'#333',background:'#fff',outline:'none',cursor:'pointer'}}>
-                    <option value={''}>— Select pitch type —</option>
-                    {['Salesforce','Oracle','SAP','ServiceNow','Workday','MS Dynamics','Pega','nCino','Coupa','Web','Mobile','API'].map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:'6px 14px',padding:'8px 12px',borderRadius:8,border:'1px solid #e0e0e0',background:'#fff'}}>
+                    {['Salesforce','Oracle','SAP','ServiceNow','Workday','MS Dynamics','Pega','nCino','Coupa','Web','Mobile','API'].map(p => (
+                      <label key={p} style={{display:'flex',alignItems:'center',gap:5,fontSize:12,color:'#374151',cursor:'pointer'}}>
+                        <input type='checkbox' checked={pitchTypes.includes(p)}
+                          onChange={() => setPitchTypes(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])} />
+                        {p}
+                      </label>
+                    ))}
+                  </div>
                   <button onClick={async () => {
-                    await supabase.from('contacts').update({ pitch_type: pitchType }).eq('id', id);
-                    setContact(c => ({ ...c, pitch_type: pitchType }));
+                    const primary = pitchTypes[0] || null;
+                    await supabase.from('contacts').update({ pitch_types: pitchTypes, pitch_type: primary }).eq('id', id);
+                    setPitchType(primary || '');
+                    setContact(c => ({ ...c, pitch_types: pitchTypes, pitch_type: primary }));
                   }}
-                    style={{padding:'7px 16px',border:'none',borderRadius:8,fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',background:'#2563eb',color:'#fff'}}>
+                    style={{alignSelf:'flex-start',padding:'7px 16px',border:'none',borderRadius:8,fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',background:'#2563eb',color:'#fff'}}>
                     Save
                   </button>
                 </div>
-                {pitchType && <div style={{marginTop:5,fontSize:11,color:'#888',fontStyle:'italic'}}>Auto-inferred from title — edit if needed</div>}
+                {pitchType && pitchTypes.length === 0 && <div style={{marginTop:5,fontSize:11,color:'#888',fontStyle:'italic'}}>Auto-inferred from title — edit if needed</div>}
               </div>
               <div style={{marginTop:16}}>
                 <label style={{display:'block',fontSize:11,fontWeight:600,color:'#555',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.3px'}}>Campaign</label>
