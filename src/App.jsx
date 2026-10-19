@@ -18,7 +18,7 @@ const Analytics    = lazy(() => import('./pages/Analytics'));
 const Leaderboard  = lazy(() => import('./pages/Leaderboard'));
 const Settings     = lazy(() => import('./pages/Settings'));
 const UsersAdmin   = lazy(() => import('./pages/UsersAdmin'));
-const Sequences    = lazy(() => import('./pages/Sequences'));
+const Templates    = lazy(() => import('./pages/Templates'));
 const Reports      = lazy(() => import('./pages/Reports'));
 const ContactDetail= lazy(() => import('./pages/ContactDetail'));
 const Accounts     = lazy(() => import('./pages/Accounts'));
@@ -81,7 +81,7 @@ export default function App() {
               <Route path="leaderboard" element={<Leaderboard />} />
               <Route path="settings" element={<Settings />} />
               <Route path="users" element={<UsersAdmin />} />
-              <Route path="sequences" element={<Sequences />} />
+              <Route path="templates" element={<Templates />} />
               <Route path="reports" element={<Reports />} />
               <Route path="lists" element={<Lists />} />
               <Route path="apollo-import" element={<ApolloImport />} />
