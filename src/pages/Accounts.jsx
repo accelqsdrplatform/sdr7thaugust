@@ -808,6 +808,10 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const [showStartModal, setShowStartModal] = useState(false);
   const [startMailboxId, setStartMailboxId] = useState('');
   const [pendingStartContact, setPendingStartContact] = useState(null);
+  const [showTrackModal, setShowTrackModal] = useState(false);
+  const [startTrack, setStartTrack] = useState('ai');
+  const [startTemplateId, setStartTemplateId] = useState('');
+  const [templateOptions, setTemplateOptions] = useState([]);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [editingLinkedIn, setEditingLinkedIn] = useState(false);
@@ -1090,17 +1094,28 @@ setSaving(false);
   }
 
   async function startContact(c) {
-    // Mailbox already locked on this contact (e.g. restarting after cooling off) — no picker needed.
-    if (c.sender_account_id) {
-      await runStartContact(c, null);
-      return;
-    }
-    if (myMailboxes.length === 0) {
+    if (!c.sender_account_id && myMailboxes.length === 0) {
       alert('Register a mailbox under Mailboxes before starting outreach.');
       return;
     }
     setPendingStartContact(c);
-    if (!startMailboxId) setStartMailboxId(myMailboxes[0].id);
+    if (!startMailboxId) setStartMailboxId(myMailboxes[0]?.id || '');
+    const { data: tpls } = await supabase.from('templates').select('*').eq('status', 'approved').eq('visibility', 'org').order('name');
+    setTemplateOptions(tpls || []);
+    setStartTrack('ai');
+    setStartTemplateId('');
+    setShowTrackModal(true);
+  }
+
+  function confirmTrackChoice() {
+    if (startTrack === 'templated' && !startTemplateId) return;
+    setShowTrackModal(false);
+    const c = pendingStartContact;
+    // Mailbox already locked on this contact (e.g. restarting after cooling off) — no picker needed.
+    if (c && c.sender_account_id) {
+      runStartContact(c, null);
+      return;
+    }
     setShowStartModal(true);
   }
 
@@ -1115,12 +1130,26 @@ setSaving(false);
   async function runStartContact(c, mailbox) {
     setQualifying(c.id);
     const now = new Date().toISOString();
-    const updatePayload = { status: 'Fresh', next_followup: now };
+    const updatePayload = { status: 'Fresh', next_followup: now, track: startTrack };
     if (!c.sender_account_id && mailbox) {
       updatePayload.sender_account_id = mailbox.id;
       updatePayload.sender_email = mailbox.email_address;
     }
     await supabase.from('contacts').update(updatePayload).eq('id', c.id);
+    if (startTrack === 'templated' && startTemplateId) {
+      const tpl = templateOptions.find(t => t.id === startTemplateId);
+      const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', startTemplateId).order('step_number');
+      await supabase.from('template_assignments').insert({
+        contact_id: c.id,
+        template_id: startTemplateId,
+        template_name: tpl?.name || '',
+        template_version: tpl?.version || 1,
+        steps: steps || [],
+        current_step: 1,
+        status: 'active',
+        assigned_by: user.id
+      });
+    }
     await supabase.from('activity_log').insert({
       actor_id: user.id, contact_id: c.id,
       activity_type: 'outreach_started', details: { started_from: 'accounts' }
@@ -2379,6 +2408,51 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
           </div>
         </div>
       )}
+      {showTrackModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: 420, maxWidth: '90vw' }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16, color: '#0f172a' }}>How should this contact be worked?</h3>
+            <div
+              onClick={() => setStartTrack('ai')}
+              style={{ border: startTrack === 'ai' ? '2px solid #2563eb' : '1px solid #e2e8f0', borderRadius: 12, padding: 14, marginBottom: 10, cursor: 'pointer', background: startTrack === 'ai' ? '#eff6ff' : '#fff' }}
+            >
+              <div style={{ fontWeight: 600, color: '#0f172a', fontSize: 14 }}>AI-personalized</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Stage-based (F1–F5) emails generated per contact, as today.</div>
+            </div>
+            <div
+              onClick={() => setStartTrack('templated')}
+              style={{ border: startTrack === 'templated' ? '2px solid #2563eb' : '1px solid #e2e8f0', borderRadius: 12, padding: 14, cursor: 'pointer', background: startTrack === 'templated' ? '#eff6ff' : '#fff' }}
+            >
+              <div style={{ fontWeight: 600, color: '#0f172a', fontSize: 14 }}>Templated</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Fixed sequence you or your org already wrote.</div>
+              {startTrack === 'templated' && (
+                <select
+                  value={startTemplateId}
+                  onChange={e => setStartTemplateId(e.target.value)}
+                  onClick={e => e.stopPropagation()}
+                  style={{ marginTop: 10, width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }}
+                >
+                  <option value="">Select a template…</option>
+                  {templateOptions.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.step_count} steps)</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+              <button onClick={() => setShowTrackModal(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#0f172a', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+              <button
+                onClick={confirmTrackChoice}
+                disabled={startTrack === 'templated' && !startTemplateId}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: (startTrack === 'templated' && !startTemplateId) ? '#93c5fd' : '#2563eb', color: '#fff', cursor: (startTrack === 'templated' && !startTemplateId) ? 'not-allowed' : 'pointer', fontSize: 13 }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showStartModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 440, boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}>
