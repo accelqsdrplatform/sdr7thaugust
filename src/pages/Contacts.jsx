@@ -53,6 +53,10 @@ export default function Contacts() {
   const [myMailboxes, setMyMailboxes] = useState([]);
   const [showStartModal, setShowStartModal] = useState(false);
   const [startMailboxId, setStartMailboxId] = useState('');
+  const [showTrackModal, setShowTrackModal] = useState(false);
+  const [startTrack, setStartTrack] = useState('ai');
+  const [startTemplateId, setStartTemplateId] = useState('');
+  const [templateOptions, setTemplateOptions] = useState([]);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
   const [totalCount, setTotalCount] = useState(0);
@@ -407,13 +411,23 @@ export default function Contacts() {
     if (withStats.length && !startMailboxId) setStartMailboxId(withStats[0].id);
   }
 
-  function openStartFlow() {
+  async function openStartFlow() {
     if (myMailboxes.length === 0) {
       setBatchMsg('Register a mailbox under Mailboxes before starting outreach.');
       setTimeout(() => setBatchMsg(''), 4000);
       return;
     }
     if (!startMailboxId) setStartMailboxId(myMailboxes[0].id);
+    const { data: tpls } = await supabase.from('templates').select('*').eq('status', 'approved').eq('visibility', 'org').order('name');
+    setTemplateOptions(tpls || []);
+    setStartTrack('ai');
+    setStartTemplateId('');
+    setShowTrackModal(true);
+  }
+
+  function confirmTrackChoice() {
+    if (startTrack === 'templated' && !startTemplateId) return;
+    setShowTrackModal(false);
     setShowStartModal(true);
   }
 
@@ -431,18 +445,35 @@ export default function Contacts() {
     const now = new Date().toISOString();
     const mailbox = myMailboxes.find(m => m.id === startMailboxId);
 
+    // Templated track: snapshot the chosen template's steps once here, so
+    // later edits to the template never retroactively change a contact
+    // already assigned to it - only future assignments pick up changes.
+    let templateSteps = [];
+    let templateRow = null;
+    if (startTrack === 'templated' && startTemplateId) {
+      templateRow = templateOptions.find(t => t.id === startTemplateId);
+      const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', startTemplateId).order('step_number');
+      templateSteps = (steps || []).map(s => ({ step_number: s.step_number, subject: s.subject, body: s.body, delay_days: s.delay_days }));
+    }
+
     let done = 0;
     for (const id of ids) {
       // Keep status as Fresh — matches Accounts page Start behavior; contact appears in Follow-up Queue New Contacts section
       const contact = contacts.find(x => x.id === id);
-      const updatePayload = { status: 'Fresh', next_followup: now };
+      const updatePayload = { status: 'Fresh', next_followup: now, track: startTrack };
       // Lock the sending mailbox on first start — never overwrite one that's already set
       if (!contact?.sender_account_id && mailbox) {
         updatePayload.sender_account_id = mailbox.id;
         updatePayload.sender_email = mailbox.email_address;
       }
       await supabase.from('contacts').update(updatePayload).eq('id', id);
-      await supabase.from('activity_log').insert({ actor_id: user.id, contact_id: id, activity_type: 'outreach_started', details: { started_from: 'contacts', note: 'Batch start' } });
+      if (startTrack === 'templated' && templateRow) {
+        await supabase.from('template_assignments').insert({
+          contact_id: id, template_id: templateRow.id, template_name: templateRow.name,
+          template_version: templateRow.version, steps: templateSteps, current_step: 1, status: 'active', assigned_by: user.id,
+        });
+      }
+      await supabase.from('activity_log').insert({ actor_id: user.id, contact_id: id, activity_type: 'outreach_started', details: { started_from: 'contacts', note: 'Batch start', track: startTrack, template_id: startTrack === 'templated' ? startTemplateId : null } });
       done++;
       setBatchMsg(`Starting… ${done}/${ids.length}`);
     }
@@ -525,6 +556,55 @@ export default function Contacts() {
           <UploadCSV userId={user.id} onDone={fetchContacts} />
         </div>
       </div>
+
+      {showTrackModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 520, boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px', color: '#111' }}>How should these contacts be reached out to?</h3>
+            <p style={{ fontSize: 12, color: '#888', margin: '0 0 16px' }}>This choice applies for the contact's entire outreach journey.</p>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
+              <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, padding: 14, borderRadius: 10, border: `1.5px solid ${startTrack === 'ai' ? '#2563eb' : '#e0e0e0'}`, cursor: 'pointer', background: startTrack === 'ai' ? '#eff6ff' : '#fff' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="radio" name="startTrack" checked={startTrack === 'ai'} onChange={() => setStartTrack('ai')} />
+                  <strong style={{ fontSize: 13, color: '#111' }}>AI-personalized</strong>
+                </div>
+                <div style={{ fontSize: 11, color: '#888' }}>Each email is written fresh per contact from account research, platform facts and persona.</div>
+              </label>
+              <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, padding: 14, borderRadius: 10, border: `1.5px solid ${startTrack === 'templated' ? '#2563eb' : '#e0e0e0'}`, cursor: 'pointer', background: startTrack === 'templated' ? '#eff6ff' : '#fff' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="radio" name="startTrack" checked={startTrack === 'templated'} onChange={() => setStartTrack('templated')} />
+                  <strong style={{ fontSize: 13, color: '#111' }}>Templated</strong>
+                </div>
+                <div style={{ fontSize: 11, color: '#888' }}>Runs a fixed multi-step sequence from the Templates library, same copy every time.</div>
+              </label>
+            </div>
+            {startTrack === 'templated' && (
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Choose a template</label>
+                {templateOptions.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#999', padding: '10px 0' }}>No approved templates yet — publish one from the Templates page first.</div>
+                ) : (
+                  <select value={startTemplateId} onChange={e => setStartTemplateId(e.target.value)}
+                    style={{ width: '100%', boxSizing: 'border-box', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 13 }}>
+                    <option value="">Select a template…</option>
+                    {templateOptions.map(t => <option key={t.id} value={t.id}>{t.name} ({t.step_count} steps)</option>)}
+                  </select>
+                )}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowTrackModal(false)}
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', color: '#666', fontSize: 13, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={confirmTrackChoice} disabled={startTrack === 'templated' && !startTemplateId}
+                style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: (startTrack === 'templated' && !startTemplateId) ? '#c7d2fe' : '#2563eb', color: '#fff', fontSize: 13, fontWeight: 600, cursor: (startTrack === 'templated' && !startTemplateId) ? 'not-allowed' : 'pointer' }}>
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showStartModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
