@@ -142,6 +142,7 @@ export default function FollowUps() {
   const [bulkGenerating, setBulkGenerating] = useState(false);
   const [bulkMarking,    setBulkMarking]    = useState(false);
   const [customPrompts, setCustomPrompts] = useState({});
+  const [templateAssignments, setTemplateAssignments] = useState({});
   const autoGenRanRef = useRef(false);
 
   useEffect(() => { fetchData(); }, [viewAll]);
@@ -243,6 +244,15 @@ export default function FollowUps() {
       clMap[cl.contact_id].push({list_id:cl.list_id,is_active_campaign:cl.is_active_campaign});
     });
     setContactListMap(clMap);
+    // Active template assignments for templated-track contacts in this queue —
+    // drives the "Step X of N" display and Mark Sent advancing the step.
+    const templatedIds = (rows||[]).filter(c=>c.track==='templated').map(c=>c.id);
+    const { data: taRows } = templatedIds.length > 0
+      ? await supabase.from('template_assignments').select('*').in('contact_id', templatedIds).eq('status','active')
+      : { data: [] };
+    const taMap={};
+    (taRows||[]).forEach(ta=>{ taMap[ta.contact_id]=ta; });
+    setTemplateAssignments(taMap);
     // Rows are ordered newest-first, so the first entry per key is the most recent note.
     const cnMap={};
     (cnRes.data||[]).forEach(n=>{ if(!cnMap[n.contact_id]) cnMap[n.contact_id]=n.body; });
@@ -340,6 +350,58 @@ export default function FollowUps() {
   async function markSent(contact){
     setMarkingSent(contact.id);
     await markSentCore(contact);
+    setMarkingSent(null);
+    fetchData();
+  }
+
+  // Templated-track contacts never run the F1-F5/axis model at all — Mark Sent
+  // here just advances template_assignments.current_step (or completes the
+  // assignment on the last step) instead of touching contacts.status.
+  function applyMergeFields(str, c, account){
+    if(!str) return '';
+    return str
+      .replace(/\{\{first_name\}\}/g, c.first_name||'')
+      .replace(/\{\{last_name\}\}/g, c.last_name||'')
+      .replace(/\{\{company\}\}/g, c.company||'')
+      .replace(/\{\{title\}\}/g, c.title||'')
+      .replace(/\{\{industry\}\}/g, account?.industry||'');
+  }
+
+  async function markSentTemplate(contact){
+    const ta = templateAssignments[contact.id];
+    if(!ta) return;
+    setMarkingSent(contact.id);
+    const steps = ta.steps||[];
+    const isLast = ta.current_step >= steps.length;
+    const now = new Date().toISOString();
+    const currentStepObj = steps.find(s=>s.step_number===ta.current_step);
+    if(isLast){
+      await supabase.from('template_assignments').update({status:'completed', completed_at:now}).eq('id', ta.id);
+      await supabase.from('contacts').update({last_contacted:now, last_touchpoint_date:now, next_followup:null}).eq('id', contact.id);
+    } else {
+      const nextStepNum = ta.current_step+1;
+      const nextStepObj = steps.find(s=>s.step_number===nextStepNum);
+      const delay = nextStepObj?.delay_days ?? 3;
+      const nextDue = new Date(); nextDue.setDate(nextDue.getDate()+delay); skipWeekend(nextDue);
+      await supabase.from('template_assignments').update({current_step: nextStepNum}).eq('id', ta.id);
+      await supabase.from('contacts').update({last_contacted:now, last_touchpoint_date:now, next_followup:nextDue.toISOString()}).eq('id', contact.id);
+    }
+    const account=accounts[contact.account_id]||{};
+    await supabase.from('activity_log').insert({
+      actor_id:user.id, contact_id:contact.id, activity_type:'email_sent',
+      details:{
+        from_stage:`Templated step ${ta.current_step}`,
+        to_stage: isLast?'Sequence Complete':`Templated step ${ta.current_step+1}`,
+        subject: applyMergeFields(currentStepObj?.subject, contact, account),
+        body: applyMergeFields(currentStepObj?.body, contact, account),
+      },
+    });
+    await supabase.from('emails').insert({
+      contact_id:contact.id, owner_id:user.id, stage:`Templated step ${ta.current_step}`,
+      subject: applyMergeFields(currentStepObj?.subject, contact, account),
+      body: applyMergeFields(currentStepObj?.body, contact, account),
+      direction:'outbound', sent_at:now,
+    });
     setMarkingSent(null);
     fetchData();
   }
@@ -452,6 +514,7 @@ export default function FollowUps() {
     onCopy:id=>copyDraft(id), onView:id=>navigate(`/contacts/${id}`),
     selectedIds, onToggleSelect:toggleSelect,
     customPrompts, onCustomPromptChange:(id,val)=>setCustomPrompts(p=>({...p,[id]:val})),
+    templateAssignments, onMarkSentTemplate:c=>markSentTemplate(c),
   };
   const noResults=filteredFresh.length===0&&filteredActive.length===0;
 
@@ -704,7 +767,8 @@ function TimingGroup({group,...props}){
 function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,markingSent,
   contactListMap,lists,sentEmails,strategyOpen,setStrategyOpen,historyOpen,setHistoryOpen,
   onGenerate,onToggleDraft,onRegenerate,onMarkSent,onSnooze,onCopy,onView,isFresh,
-  customPrompts,onCustomPromptChange,selectedIds,onToggleSelect}){
+  customPrompts,onCustomPromptChange,selectedIds,onToggleSelect,
+  templateAssignments,onMarkSentTemplate}){
   const customPrompt=customPrompts?.[c.id]||'';
   const sm=STAGE_META[c.status]||{bg:'#f1f5f9',color:'#475569',label:c.status};
   const rm=c.response_type?RESPONSE_META[c.response_type]:null;
@@ -721,6 +785,24 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
   const lastTouch=c.last_touchpoint_date||c.last_contacted||(sentHistory&&sentHistory[0]&&sentHistory[0].date);
   const markSentLabel=c.status==='Fresh'?'Send → F1':c.status==='F5'?'Send → Cooling off':'Mark Sent';
   const draftBtnLabel=isDrafting?'Drafting...':hasDraft?(isDraftOpen?'Hide Draft':'Show Draft'):c.status==='Fresh'?'Draft Initial Email':'Draft Email';
+  const isTemplated=c.track==='templated';
+  const ta=templateAssignments?.[c.id];
+  const taSteps=ta?.steps||[];
+  const taTotal=taSteps.length;
+  const taCurrentStep=ta?.current_step||1;
+  const taComplete=ta?.status==='completed';
+  const taStepObj=taSteps.find(s=>s.step_number===taCurrentStep)||taSteps[taSteps.length-1]||null;
+  function mf(str){
+    if(!str) return '';
+    return str
+      .replace(/\{\{first_name\}\}/g, c.first_name||'')
+      .replace(/\{\{last_name\}\}/g, c.last_name||'')
+      .replace(/\{\{company\}\}/g, c.company||'')
+      .replace(/\{\{title\}\}/g, c.title||'')
+      .replace(/\{\{industry\}\}/g, account?.industry||'');
+  }
+  const taSubject=taStepObj?mf(taStepObj.subject):'';
+  const taBody=taStepObj?mf(taStepObj.body):'';
 
   return(
     <div style={{background:'#fff',borderRadius:10,overflow:'hidden',
@@ -749,7 +831,14 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
             {c.title?`${c.title} · `:''}{c.company||'—'}
           </div>
         </div>
-        <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:6,background:sm.bg,color:sm.color,flexShrink:0,whiteSpace:'nowrap'}}>{sm.label}</span>
+        {isTemplated?(
+          <>
+            <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:6,background:'#ede9fe',color:'#6d28d9',flexShrink:0,whiteSpace:'nowrap'}}>Templated</span>
+            <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:6,background:taComplete?'#dcfce7':'#f1f5f9',color:taComplete?'#15803d':'#475569',flexShrink:0,whiteSpace:'nowrap'}}>{taComplete?'Sequence Complete':`Step ${taCurrentStep} of ${taTotal}`}</span>
+          </>
+        ):(
+          <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:6,background:sm.bg,color:sm.color,flexShrink:0,whiteSpace:'nowrap'}}>{sm.label}</span>
+        )}
         {rm&&<span style={{fontSize:11,padding:'2px 8px',borderRadius:6,background:rm.bg,color:rm.color,fontWeight:500,flexShrink:0}}>{rm.label}</span>}
         {sentHistory.length>0&&(
           <button onClick={()=>setHistoryOpen(h=>({...h,[c.id]:!h[c.id]}))}
@@ -778,17 +867,34 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
           {isOverdue&&'⚠ '}{formatDue(c._due)}
         </div>
         <div style={{display:'flex',gap:5,flexShrink:0,alignItems:'center'}}>
-          <button onClick={hasDraft?()=>onToggleDraft(c):()=>onGenerate(c,customPrompt)} disabled={isDrafting}
-            style={{padding:'5px 11px',borderRadius:7,fontSize:11,fontWeight:600,border:'none',cursor:isDrafting?'wait':'pointer',
-              background:hasDraft?(isDraftOpen?'#ede9fe':'#f5f3ff'):'linear-gradient(135deg,#7c3aed,#2563eb)',
-              color:hasDraft?'#7c3aed':'#fff',boxShadow:!hasDraft?'0 1px 4px rgba(37,99,235,0.3)':'none'}}>
-            {draftBtnLabel}
-          </button>
-          {hasDraft&&<button onClick={()=>onMarkSent(c)} disabled={isMarking}
-            style={{padding:'5px 11px',borderRadius:7,fontSize:11,fontWeight:700,border:'none',
-              background:isMarking?'#d1fae5':'#059669',color:'#fff',cursor:isMarking?'wait':'pointer'}}>
-            {isMarking?'Done!':markSentLabel}
-          </button>}
+          {isTemplated?(
+            <>
+              <button onClick={()=>onToggleDraft(c)}
+                style={{padding:'5px 11px',borderRadius:7,fontSize:11,fontWeight:600,border:'none',cursor:'pointer',
+                  background:isDraftOpen?'#ede9fe':'#f5f3ff',color:'#7c3aed'}}>
+                {isDraftOpen?'Hide Step':'View Step'}
+              </button>
+              {!taComplete&&<button onClick={()=>onMarkSentTemplate(c)} disabled={isMarking}
+                style={{padding:'5px 11px',borderRadius:7,fontSize:11,fontWeight:700,border:'none',
+                  background:isMarking?'#d1fae5':'#059669',color:'#fff',cursor:isMarking?'wait':'pointer'}}>
+                {isMarking?'Done!':(taCurrentStep>=taTotal?'Send → Complete':'Mark Sent')}
+              </button>}
+            </>
+          ):(
+            <>
+              <button onClick={hasDraft?()=>onToggleDraft(c):()=>onGenerate(c,customPrompt)} disabled={isDrafting}
+                style={{padding:'5px 11px',borderRadius:7,fontSize:11,fontWeight:600,border:'none',cursor:isDrafting?'wait':'pointer',
+                  background:hasDraft?(isDraftOpen?'#ede9fe':'#f5f3ff'):'linear-gradient(135deg,#7c3aed,#2563eb)',
+                  color:hasDraft?'#7c3aed':'#fff',boxShadow:!hasDraft?'0 1px 4px rgba(37,99,235,0.3)':'none'}}>
+                {draftBtnLabel}
+              </button>
+              {hasDraft&&<button onClick={()=>onMarkSent(c)} disabled={isMarking}
+                style={{padding:'5px 11px',borderRadius:7,fontSize:11,fontWeight:700,border:'none',
+                  background:isMarking?'#d1fae5':'#059669',color:'#fff',cursor:isMarking?'wait':'pointer'}}>
+                {isMarking?'Done!':markSentLabel}
+              </button>}
+            </>
+          )}
           <select onChange={e=>{if(e.target.value){onSnooze(c.id,Number(e.target.value));e.target.value='';}}}
             style={{padding:'5px 6px',borderRadius:7,border:'1px solid #e5e7eb',fontSize:11,background:'#f9fafb',color:'#374151',cursor:'pointer'}}>
             <option value="">Snooze...</option>
@@ -803,7 +909,31 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
       </div>
 
       {/* Draft panel */}
-      {isDraftOpen&&(
+      {isDraftOpen&&isTemplated&&(
+        <div style={{borderTop:'1px solid #ede9fe',background:'#fdf8ff',padding:'14px 16px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+            <div style={{fontSize:12,fontWeight:700,color:'#374151',flex:1}}>Templated — {taComplete?'Sequence Complete':`Step ${taCurrentStep} of ${taTotal}`}</div>
+            <button onClick={()=>onCopy(c.id)} style={{fontSize:11,padding:'3px 12px',borderRadius:6,border:'none',background:isCopied?'#059669':'#6d28d9',color:'#fff',cursor:'pointer',fontWeight:600}}>{isCopied?'Copied!':'Copy'}</button>
+            {!taComplete&&<button onClick={()=>onMarkSentTemplate(c)} disabled={isMarking} style={{fontSize:11,padding:'3px 12px',borderRadius:6,border:'none',background:isMarking?'#6ee7b7':'#059669',color:'#fff',cursor:isMarking?'wait':'pointer',fontWeight:700}}>{isMarking?'Done!':(taCurrentStep>=taTotal?'Send → Complete':'Mark Sent')}</button>}
+          </div>
+          {taStepObj?(
+            <>
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#9ca3af',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Subject</div>
+                <div style={{fontSize:13,fontWeight:600,color:'#111',padding:'8px 11px',background:'#fff',borderRadius:7,border:'1px solid #e5e7eb'}}>{taSubject}</div>
+              </div>
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:'#9ca3af',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Body</div>
+                <div style={{fontSize:12,lineHeight:1.85,color:'#374151',padding:'10px 13px',background:'#fff',borderRadius:7,border:'1px solid #e5e7eb',whiteSpace:'pre-wrap',fontFamily:'inherit'}}>{taBody}</div>
+              </div>
+              <div style={{marginTop:10,fontSize:11,color:'#9ca3af'}}>Copy the content, personalise it, send it yourself, then click <strong style={{color:'#059669'}}>Mark Sent</strong>.</div>
+            </>
+          ):(
+            <div style={{fontSize:12,color:'#9ca3af'}}>No step content found for this sequence.</div>
+          )}
+        </div>
+      )}
+      {isDraftOpen&&!isTemplated&&(
         <div style={{borderTop:`1px solid ${hasDraft?'#ede9fe':'#f3f4f6'}`,background:'#fdf8ff',padding:'14px 16px'}}>
           {isDrafting?(
             <div style={{textAlign:'center',padding:'28px 0',color:'#7c3aed'}}>
