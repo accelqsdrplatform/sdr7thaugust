@@ -446,7 +446,7 @@ export default function ContactDetail() {
                         background: done ? '#2563eb' : active ? sc2.bg : '#f0f0ee',
                         color: done ? '#fff' : active ? sc2.color : '#bbb',
                         border: active ? `2px solid ${sc2.color}` : done ? '2px solid #2563eb' : '2px solid #e8e8e4',
-                        transition: 'all 0.2s',
+                        transition: 'background 0.2s, color 0.2s, border 0.2s',
                       }}>
                         {done ? '✓' : s === 'Fresh' ? '0' : s.slice(1)}
                       </div>
@@ -473,7 +473,7 @@ export default function ContactDetail() {
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {RESPONSE_OPTIONS.map(r => (
                 <button key={r.value} onClick={() => setResponse(contact.response_type === r.value ? null : r.value)}
-                  style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontWeight: 500, transition: 'all 0.15s',
+                  style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontWeight: 500, transition: 'background 0.15s, color 0.15s, border 0.15s',
                     background: contact.response_type === r.value ? r.bg : '#f8f8f6',
                     color: contact.response_type === r.value ? r.color : '#888',
                     border: contact.response_type === r.value ? `1.5px solid ${r.color}` : '1.5px solid #e8e8e4' }}>
