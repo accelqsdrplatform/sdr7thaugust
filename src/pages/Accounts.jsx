@@ -974,6 +974,8 @@ function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const [companyNotesList, setCompanyNotesList] = useState([]);
   const [newCompanyNoteText, setNewCompanyNoteText] = useState('');
   const [savingCompanyNote, setSavingCompanyNote] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editNoteDraft, setEditNoteDraft] = useState('');
   const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
   const [editingCompanyDetails, setEditingCompanyDetails] = useState(false);
   const [companyDetailsDraft, setCompanyDetailsDraft] = useState({
@@ -1093,8 +1095,16 @@ setSaving(false);
   async function removeCustomSection(idx) { await patch({ custom_research: customResearch.filter((_, i) => i !== idx) }); }
   async function saveCustomResearch(idx, value) { await patch({ custom_research: customResearch.map((s, i) => i === idx ? { ...s, value } : s) }); }
   const fetchCompanyNotes = useCallback(async () => {
-    const { data: cn } = await supabase.from('company_notes').select('*, profiles(full_name)').eq('company_name', data.name).order('created_at', { ascending: false });
-    setCompanyNotesList(cn || []);
+    const { data: cn } = await supabase.from('company_notes').select('*').eq('company_name', data.name).order('created_at', { ascending: false });
+    const rows = cn || [];
+    if (rows.length) {
+      const authorIds = [...new Set(rows.map(r => r.author_id).filter(Boolean))];
+      const { data: authors } = await supabase.from('user_settings').select('user_id, full_name').in('user_id', authorIds);
+      const nameMap = {};
+      (authors || []).forEach(a => { nameMap[a.user_id] = a.full_name; });
+      rows.forEach(r => { r.author_name = nameMap[r.author_id] || null; });
+    }
+    setCompanyNotesList(rows);
   }, [data.name]);
   useEffect(() => { fetchCompanyNotes(); }, [fetchCompanyNotes]);
   useEffect(() => { loadMailboxes(); }, []);
@@ -1135,6 +1145,17 @@ setSaving(false);
     await supabase.from('company_notes').insert({ company_name: data.name, author_id: user.id, body: newCompanyNoteText.trim() });
     setNewCompanyNoteText('');
     setSavingCompanyNote(false);
+    fetchCompanyNotes();
+  }
+  async function updateCompanyNote(noteId) {
+    if (!editNoteDraft.trim()) return;
+    await supabase.from('company_notes').update({ body: editNoteDraft.trim() }).eq('id', noteId);
+    setEditingNoteId(null);
+    setEditNoteDraft('');
+    fetchCompanyNotes();
+  }
+  async function deleteCompanyNote(noteId) {
+    await supabase.from('company_notes').delete().eq('id', noteId);
     fetchCompanyNotes();
   }
   async function saveLinkedIn() { await patch({ linkedin_url: linkedInDraft }); setEditingLinkedIn(false); }
@@ -2358,10 +2379,33 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
               ) : companyNotesList.map(n => (
                 <div key={n.id} style={{ padding: '12px 14px', borderRadius: 8, marginBottom: 10, background: '#f8f8f6', borderLeft: '3px solid #e0e0e0' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>{n.profiles?.full_name || 'Unknown'}</span>
-                    <span style={{ fontSize: 11, color: '#bbb' }}>{n.created_at ? new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>{n.author_name || 'Unknown'}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, color: '#bbb' }}>{n.created_at ? new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
+                      {n.author_id === user.id && editingNoteId !== n.id && (
+                        <>
+                          <button onClick={() => { setEditingNoteId(n.id); setEditNoteDraft(n.body); }}
+                            title="Edit note" style={{ fontSize: 11, padding: '2px 6px', borderRadius: 5, border: '1px solid #e5e7eb', background: '#fff', color: '#555', cursor: 'pointer' }}>✏️</button>
+                          <button onClick={() => deleteCompanyNote(n.id)}
+                            title="Delete note" style={{ fontSize: 11, padding: '2px 6px', borderRadius: 5, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer' }}>🗑️</button>
+                        </>
+                      )}
+                    </span>
                   </div>
-                  <p style={{ fontSize: 13, color: '#333', margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{n.body}</p>
+                  {editingNoteId === n.id ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <textarea value={editNoteDraft} onChange={e => setEditNoteDraft(e.target.value)} rows={3} autoFocus
+                        style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #e5e7eb', fontSize: 13, resize: 'vertical', fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }} />
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button onClick={() => { setEditingNoteId(null); setEditNoteDraft(''); }}
+                          style={{ fontSize: 12, padding: '5px 12px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer' }}>Cancel</button>
+                        <button onClick={() => updateCompanyNote(n.id)} disabled={!editNoteDraft.trim()}
+                          style={{ fontSize: 12, padding: '5px 12px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', opacity: !editNoteDraft.trim() ? 0.5 : 1 }}>Save</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 13, color: '#333', margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{n.body}</p>
+                  )}
                 </div>
               ))}
             </div>
