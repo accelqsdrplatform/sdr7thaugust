@@ -51,7 +51,7 @@ function btnStyle(kind) {
 export default function Templates() {
   const { user, profile } = useAuth();
   const role = profile?.role || 'owner';
-  const canApprove = role === 'admin' || role === 'owner';
+  const canApprove = role === 'admin'; // Approval restricted to Admin only (owner/sub-admin no longer get the Approvals tab)
 
   const [tab, setTab] = useState('library');
   const [library, setLibrary] = useState([]);
