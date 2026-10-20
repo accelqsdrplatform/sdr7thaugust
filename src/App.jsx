@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Suspense, lazy } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import AppShell from './components/layout/AppShell';
+import { Toaster } from 'sonner';
 
 // Lazy-load every page — only downloaded when first visited
 const Login        = lazy(() => import('./pages/Login'));
@@ -60,7 +61,9 @@ function PublicRoute({ children }) {
 
 export default function App() {
   return (
-    <AuthProvider>
+    <>
+      <Toaster richColors position="top-right" />
+      <AuthProvider>
       <BrowserRouter>
         <Suspense fallback={<PageLoader />}>
           <Routes>
@@ -96,6 +99,7 @@ export default function App() {
           </Routes>
         </Suspense>
       </BrowserRouter>
-    </AuthProvider>
+      </AuthProvider>
+    </>
   );
 }
