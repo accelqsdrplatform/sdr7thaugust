@@ -871,9 +871,11 @@ export default function Accounts() {
 
       {/* ADD ACCOUNT MODAL */}
       {showAddAccount && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        <>
+        <style>{'@keyframes acctModalOverlayIn { from { opacity: 0; } to { opacity: 1; } } @keyframes acctModalCardIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } } @media (prefers-reduced-motion: reduce) { .acct-modal-card { animation: none !important; } }'}</style>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'acctModalOverlayIn 150ms ease-out' }}
           onClick={e => e.target === e.currentTarget && setShowAddAccount(false)}>
-          <div style={{ background: '#fff', borderRadius: 14, padding: 28, width: 460, maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+          <div className="acct-modal-card" style={{ background: '#fff', borderRadius: 14, padding: 28, width: 460, maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', animation: 'acctModalCardIn 180ms cubic-bezier(0.23, 1, 0.32, 1)' }}>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, color: '#111' }}>Add Account</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {[
@@ -915,6 +917,7 @@ export default function Accounts() {
             </div>
           </div>
         </div>
+        </>
       )}
     </div>
   );
