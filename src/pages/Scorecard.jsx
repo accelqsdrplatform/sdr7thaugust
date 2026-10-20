@@ -122,9 +122,10 @@ export default function Scorecard() {
     callFn({ target_id: userId, ...rangeParams, ...industryParams, ...viewAsParam })
       .then(d => {
         setData(d);
-        // Keep the full industry list around even after filtering down to one,
-        // so the dropdown doesn't collapse to a single option.
-        if (!industryFilter) setIndustryOptions(Object.keys(d.inventory.industry_counts).sort());
+        // Org-wide industry list from the backend (not scoped to the viewed
+        // person's own book), so the dropdown always has every real
+        // industry to pick from, even for someone with few/no accounts tagged.
+        setIndustryOptions(d.industries || []);
         setLoading(false);
       })
       .catch(e => { setError(e.message); setLoading(false); });
