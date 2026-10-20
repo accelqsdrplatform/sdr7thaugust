@@ -139,6 +139,15 @@ export default function Scorecard() {
   const { target, at_a_glance, funnel, quality, messaging, inventory, roster } = data;
   const hasBook = inventory.total_contacts > 0;
   const hasMessaging = messaging && messaging.length > 0;
+  // Best-performing combo worth calling out: needs a couple of sends to mean
+  // anything (same threshold the backend uses to even include a combo), and
+  // "best" means beating the org average for that exact combo, not just a
+  // high raw rate off a tiny sample.
+  const bestCombo = hasMessaging
+    ? messaging
+        .filter(m => m.my_total >= 2 && m.org_reply_rate !== null && m.my_reply_rate > m.org_reply_rate)
+        .sort((a, b) => (b.my_reply_rate - b.org_reply_rate) - (a.my_reply_rate - a.org_reply_rate))[0]
+    : null;
   const hasRoster = roster && roster.length > 0;
   const hasResponseData = quality.replied > 0 || quality.bounced > 0;
 
@@ -273,6 +282,14 @@ export default function Scorecard() {
 
       {/* Messaging effectiveness */}
       <Card title="Messaging effectiveness" subtitle="Reply rate by persona × pitch, vs. org average for the same combo" style={{ marginBottom: 16 }}>
+        {bestCombo && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 14, background: '#ecfdf5', border: '0.5px solid #a7f3d0', borderRadius: 8 }}>
+            <span style={{ fontSize: 18 }}>⭐</span>
+            <div style={{ fontSize: 12.5, color: '#065f46' }}>
+              Your best combo is <strong>{bestCombo.persona} × {bestCombo.pitch_type}</strong> at <strong>{bestCombo.my_reply_rate}%</strong> reply rate (org average for this combo: {bestCombo.org_reply_rate}%). Worth leaning into when picking which contacts to prioritize.
+            </div>
+          </div>
+        )}
         {hasMessaging ? (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead>
