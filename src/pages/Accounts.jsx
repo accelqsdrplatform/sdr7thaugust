@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { GICS_SECTORS } from '../constants/industries';
+import { toast } from 'sonner';
 
 const LEGACY_TOOLS = ['selenium','uft','tosca','soapui','qtp','silktest','winrunner','loadrunner','jmeter','rational'];
 const MODERN_TOOLS = ['cypress','playwright','webdriverio','testcafe','k6','appium','detox','jest','pytest','robot framework'];
@@ -1183,7 +1184,7 @@ setSaving(false);
     if (ids.length === 0) return;
     const { error } = await supabase.from('contacts').delete().in('id', ids).eq('owner_id', user.id);
     if (error) {
-      alert('Could not delete contacts: ' + error.message);
+      toast.error('Could not delete contacts: ' + error.message);
       return;
     }
     setDeleteConfirm(null);
@@ -1218,7 +1219,7 @@ setSaving(false);
 
   async function startContact(c) {
     if (!c.sender_account_id && myMailboxes.length === 0) {
-      alert('Register a mailbox under Mailboxes before starting outreach.');
+      toast.error('Register a mailbox under Mailboxes before starting outreach.');
       return;
     }
     setPendingStartContact(c);
@@ -1571,10 +1572,10 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
       if (result.found) {
         const got = [result.email && 'email', result.linkedin_url && 'LinkedIn', result.company_linkedin_url && 'company LinkedIn'].filter(Boolean);
         const jobChangeMsg = result.job_change_detected ? `\n\n🔄 Job change detected: now ${result.job_change_new_title || ''}${result.job_change_new_company ? ' at ' + result.job_change_new_company : ''}` : '';
-        alert((got.length ? 'Enriched: ' + got.join(', ') : 'No new data found in Apollo') + jobChangeMsg);
+        toast.success((got.length ? 'Enriched: ' + got.join(', ') : 'No new data found in Apollo') + jobChangeMsg);
         onUpdate();
-      } else { alert('No match found in Apollo for this contact.'); }
-    } catch(err) { alert('Enrichment failed: ' + err.message); }
+      } else { toast.error('No match found in Apollo for this contact.'); }
+    } catch(err) { toast.error('Enrichment failed: ' + err.message); }
     finally { setEnrichingContact(null); }
   }
 
@@ -1628,7 +1629,7 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
     setBulkEnriching(null);
     setSelectedEnrich(new Set());
     onUpdate();
-    alert(`Bulk enrich done: ${enrichedCount} enriched, ${noMatchCount} no match, ${failedCount} failed`);
+    toast.success(`Bulk enrich done: ${enrichedCount} enriched, ${noMatchCount} no match, ${failedCount} failed`);
   }
 
   const TABS = [
