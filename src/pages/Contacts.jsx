@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext'; import { markContactBounced } from '../utils/bounce';
 import { toast } from 'sonner';
+import { normalizeIndustry } from '../constants/industryAliases';
 
 const STATUSES = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'won', 'lost', 'bounced', 'unsubscribed'];
 
@@ -1581,7 +1582,7 @@ function UploadCSV({ userId, onDone }) {
 
       newCoList.push({
         name,
-        industry:            sample._industry || '',
+        industry:            normalizeIndustry(sample._industry) || '',
         country:             sample._country || '',
         website:             sample._website || '',
         revenue_millions:    sample._revenue || '',
