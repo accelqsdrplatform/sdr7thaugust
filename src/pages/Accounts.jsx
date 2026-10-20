@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { GICS_SECTORS } from '../constants/industries';
 
 const LEGACY_TOOLS = ['selenium','uft','tosca','soapui','qtp','silktest','winrunner','loadrunner','jmeter','rational'];
 const MODERN_TOOLS = ['cypress','playwright','webdriverio','testcafe','k6','appium','detox','jest','pytest','robot framework'];
@@ -883,10 +884,22 @@ export default function Accounts() {
               ].map(f => (
                 <div key={f.key}>
                   <label style={{ fontSize: 11, color: '#6b7280', display: 'block', marginBottom: 5, fontWeight: 500 }}>{f.label}</label>
-                  <input value={newAcct[f.key]} onChange={e => setNewAcct({ ...newAcct, [f.key]: e.target.value })} placeholder={f.placeholder}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13, outline: 'none', boxSizing: 'border-box', transition: 'border 0.15s' }}
-                    onFocus={e => e.target.style.borderColor = '#2563eb'}
-                    onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
+                  {f.key === 'industry' ? (
+                    <select value={newAcct[f.key]} onChange={e => setNewAcct({ ...newAcct, [f.key]: e.target.value })}
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                      <option value="">Select industry...</option>
+                      {GICS_SECTORS.map(g => (
+                        <optgroup key={g.sector} label={g.sector}>
+                          {g.industries.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={newAcct[f.key]} onChange={e => setNewAcct({ ...newAcct, [f.key]: e.target.value })} placeholder={f.placeholder}
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13, outline: 'none', boxSizing: 'border-box', transition: 'border 0.15s' }}
+                      onFocus={e => e.target.style.borderColor = '#2563eb'}
+                      onBlur={e => e.target.style.borderColor = '#e5e7eb'} />
+                  )}
                 </div>
               ))}
             </div>
@@ -1736,8 +1749,20 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                 ].map(f => (
                   <div key={f.key}>
                     <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 2 }}>{f.label}</div>
-                    <input value={companyDetailsDraft[f.key]} onChange={e => setCompanyDetailsDraft(d => ({ ...d, [f.key]: e.target.value }))}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                    {f.key === 'industry' ? (
+                      <select value={companyDetailsDraft[f.key]} onChange={e => setCompanyDetailsDraft(d => ({ ...d, [f.key]: e.target.value }))}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                        <option value="">Select industry...</option>
+                        {GICS_SECTORS.map(g => (
+                          <optgroup key={g.sector} label={g.sector}>
+                            {g.industries.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+                          </optgroup>
+                        ))}
+                      </select>
+                    ) : (
+                      <input value={companyDetailsDraft[f.key]} onChange={e => setCompanyDetailsDraft(d => ({ ...d, [f.key]: e.target.value }))}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e5e7eb', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                    )}
                   </div>
                 ))}
                 <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
