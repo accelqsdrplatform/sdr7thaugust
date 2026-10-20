@@ -254,10 +254,15 @@ export default function Accounts() {
     if (filterBy === 'notes') q = q.eq('has_notes', true);
 
     if (acctIndustryFilter) q = q.eq('industry', acctIndustryFilter);
-    if (acctHeadcountFilter === '1-50') q = q.gte('employee_count', 1).lte('employee_count', 50);
-    else if (acctHeadcountFilter === '51-200') q = q.gte('employee_count', 51).lte('employee_count', 200);
-    else if (acctHeadcountFilter === '201-1000') q = q.gte('employee_count', 201).lte('employee_count', 1000);
-    else if (acctHeadcountFilter === '1000+') q = q.gte('employee_count', 1001);
+    // employee_count is free-text ("10,000-50,000", "50-200 (estimated)", ...),
+    // so range comparisons against it are string comparisons, not numeric ones
+    // (e.g. "10,000-50,000" sorts between "1" and "50" alphabetically). Filter
+    // against employee_count_numeric, a parsed integer column kept in sync by
+    // a DB trigger, instead.
+    if (acctHeadcountFilter === '1-50') q = q.gte('employee_count_numeric', 1).lte('employee_count_numeric', 50);
+    else if (acctHeadcountFilter === '51-200') q = q.gte('employee_count_numeric', 51).lte('employee_count_numeric', 200);
+    else if (acctHeadcountFilter === '201-1000') q = q.gte('employee_count_numeric', 201).lte('employee_count_numeric', 1000);
+    else if (acctHeadcountFilter === '1000+') q = q.gte('employee_count_numeric', 1001);
     if (acctNeverTouched) q = q.is('last_touch_date', null);
     else {
       if (acctLastTouchedFrom) q = q.gte('last_touch_date', acctLastTouchedFrom);
@@ -275,7 +280,7 @@ export default function Accounts() {
 
     if (sortBy === 'score') q = q.order('score', { ascending: false });
     else if (sortBy === 'contacts') q = q.order('contact_count', { ascending: false });
-    else if (sortBy === 'headcount') q = q.order('employee_count', { ascending: false, nullsFirst: false });
+    else if (sortBy === 'headcount') q = q.order('employee_count_numeric', { ascending: false, nullsFirst: false });
     else if (sortBy === 'stale') q = q.order('last_touch_date', { ascending: true, nullsFirst: true });
     else if (sortBy === 'fresh') q = q.order('fresh_contact_count', { ascending: false });
     else q = q.order('name', { ascending: true });
