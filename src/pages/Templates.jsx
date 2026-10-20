@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { toast as sonnerToast } from 'sonner';
 
 const PITCH_TYPES = ['Salesforce','ServiceNow','SAP','Workday','Oracle','MS Dynamics','Pega','nCino','Coupa','Web','Mobile','API'];
 const CAMPAIGNS = ['Generic','Selenium','Playwright','Cypress','Testing of AI/Agents'];
@@ -74,8 +75,7 @@ export default function Templates() {
   const [previewing, setPreviewing] = useState(null);
   const [previewSteps, setPreviewSteps] = useState([]);
 
-  const [toast, setToast] = useState(null);
-  const showToast = (msg, type) => { setToast({ msg, type: type || 'success' }); setTimeout(() => setToast(null), 3000); };
+  const showToast = (msg, type) => { (type === 'error' ? sonnerToast.error : sonnerToast.success)(msg); };
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -315,10 +315,6 @@ export default function Templates() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', padding: '24px 28px' }}>
-      {toast && (
-        <div style={{ position: 'fixed', bottom: 28, right: 28, zIndex: 9999, background: toast.type === 'error' ? '#fef2f2' : '#0f172a', color: toast.type === 'error' ? '#991b1b' : '#fff', border: toast.type === 'error' ? '1px solid #fecaca' : 'none', padding: '11px 20px', borderRadius: 10, fontSize: 13, fontWeight: 500, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>{toast.msg}</div>
-      )}
-
       <div style={{ maxWidth: 1140, margin: '0 auto 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: '#0f172a' }}>Templates</h1>
