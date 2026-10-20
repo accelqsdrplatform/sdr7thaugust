@@ -108,6 +108,8 @@ export default function Scorecard() {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [industryFilter, setIndustryFilter] = useState('');
+  const [industryOptions, setIndustryOptions] = useState([]);
 
   const isAdmin = profile?.role === 'admin';
   const viewAsParam = viewingAs?.id ? { view_as: viewingAs.id } : {};
@@ -116,10 +118,17 @@ export default function Scorecard() {
     setLoading(true);
     setError(null);
     const rangeParams = customRange ? { from: customRange.from, to: customRange.to } : { days };
-    callFn({ target_id: userId, ...rangeParams, ...viewAsParam })
-      .then(d => { setData(d); setLoading(false); })
+    const industryParams = industryFilter ? { industry: industryFilter } : {};
+    callFn({ target_id: userId, ...rangeParams, ...industryParams, ...viewAsParam })
+      .then(d => {
+        setData(d);
+        // Keep the full industry list around even after filtering down to one,
+        // so the dropdown doesn't collapse to a single option.
+        if (!industryFilter) setIndustryOptions(Object.keys(d.inventory.industry_counts).sort());
+        setLoading(false);
+      })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [userId, days, customRange, viewingAs?.id]);
+  }, [userId, days, customRange, industryFilter, viewingAs?.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -182,6 +191,15 @@ export default function Scorecard() {
             Custom
           </button>
         </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        <span style={{ fontSize: 12, color: '#888' }}>Industry:</span>
+        <select value={industryFilter} onChange={e => setIndustryFilter(e.target.value)}
+          style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '0.5px solid #e8e8e4', background: '#fff', color: '#333' }}>
+          <option value="">All industries</option>
+          {industryOptions.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+        </select>
       </div>
 
       {showCustomPicker && (
