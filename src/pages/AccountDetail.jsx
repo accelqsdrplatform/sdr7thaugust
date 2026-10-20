@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { GICS_SECTORS } from '../constants/industries';
+import { toast } from 'sonner';
 
 const STATUS_COLORS = {
   prospecting:  { bg: '#e0f2fe', color: '#0369a1' },
@@ -61,7 +62,7 @@ export default function AccountDetail() {
   async function deleteContact(contactId) {
     const { error } = await supabase.from('contacts').delete().eq('id', contactId).eq('owner_id', user.id);
     if (error) {
-      alert('Could not delete contact: ' + error.message);
+      toast.error('Could not delete contact: ' + error.message);
       return;
     }
     setDeleteConfirm(null);
