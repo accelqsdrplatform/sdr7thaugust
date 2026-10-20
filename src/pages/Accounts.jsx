@@ -31,6 +31,18 @@ const RESEARCH_DEFAULTS = [
 
 const RESEARCH_LOCK_DAYS = 90;
 
+// Employee-headcount bands for the "Accounts by size" rollup. Uses
+// employee_count_numeric (a parsed integer column) rather than the free-text
+// employee_count column, for the same reason the headcount filter does.
+const SIZE_BANDS = [
+  { key: '1-50', label: '1–50', min: 1, max: 50 },
+  { key: '51-200', label: '51–200', min: 51, max: 200 },
+  { key: '201-1000', label: '201–1,000', min: 201, max: 1000 },
+  { key: '1001-5000', label: '1,001–5,000', min: 1001, max: 5000 },
+  { key: '5001-20000', label: '5,001–20,000', min: 5001, max: 20000 },
+  { key: '20000+', label: '20,000+', min: 20001, max: null },
+];
+
 function normalizeDomain(website) {
   if (!website) return '';
   return website.trim().toLowerCase()
@@ -226,6 +238,9 @@ export default function Accounts() {
   const [hygieneSelected, setHygieneSelected] = useState({});
   const [hygieneMerging, setHygieneMerging] = useState(null);
 
+  const [sizeBandCounts, setSizeBandCounts] = useState(null);
+  const [sizeBandLoading, setSizeBandLoading] = useState(false);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     let accountIdsScope = null;
@@ -312,6 +327,65 @@ export default function Accounts() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter]);
+
+  // Accounts-by-size rollup for the right-panel summary. Mirrors fetchAll's
+  // scoping/filters so it reflects the same book, but deliberately omits the
+  // headcount filter itself -- this is meant to show the full size
+  // distribution so it can inform which headcount bucket to pick, not just
+  // echo back whichever bucket is already selected.
+  const fetchSizeBands = useCallback(async () => {
+    setSizeBandLoading(true);
+    let accountIdsScope = null;
+    if (!canViewAll) {
+      const { data: myContacts } = await supabase.from('contacts').select('account_id').eq('owner_id', user.id).not('account_id', 'is', null);
+      accountIdsScope = [...new Set((myContacts || []).map(c => c.account_id))];
+      if (accountIdsScope.length === 0) {
+        setSizeBandCounts(SIZE_BANDS.map(b => ({ ...b, count: 0 })).concat([{ key: 'unparsed', label: 'Unparsed / unknown', count: 0 }]));
+        setSizeBandLoading(false);
+        return;
+      }
+    }
+
+    function baseQuery() {
+      let q = supabase.from('accounts_with_stats').select('*', { count: 'exact', head: true });
+      if (accountIdsScope) q = q.in('id', accountIdsScope);
+      if (filterBy === 'legacy') q = q.eq('has_legacy_tool', true);
+      if (filterBy === 'hiring') q = q.eq('is_hiring_qa', true);
+      if (filterBy === 'funded') q = q.eq('is_funded', true);
+      if (filterBy === 'signals') q = q.or('has_legacy_tool.eq.true,is_hiring_qa.eq.true,is_funded.eq.true,has_outage.eq.true,has_leadership_change.eq.true');
+      if (filterBy === 'notes') q = q.eq('has_notes', true);
+      if (acctIndustryFilter) q = q.eq('industry', acctIndustryFilter);
+      if (acctNeverTouched) q = q.is('last_touch_date', null);
+      else {
+        if (acctLastTouchedFrom) q = q.gte('last_touch_date', acctLastTouchedFrom);
+        if (acctLastTouchedTo) q = q.lte('last_touch_date', acctLastTouchedTo);
+      }
+      if (acctFreshCountFilter === '0') q = q.eq('fresh_contact_count', 0);
+      else if (acctFreshCountFilter === '1-5') q = q.gte('fresh_contact_count', 1).lte('fresh_contact_count', 5);
+      else if (acctFreshCountFilter === '6-15') q = q.gte('fresh_contact_count', 6).lte('fresh_contact_count', 15);
+      else if (acctFreshCountFilter === '16+') q = q.gte('fresh_contact_count', 16);
+      if (search) {
+        const s = '%' + search + '%';
+        q = q.or('name.ilike.' + s + ',industry.ilike.' + s + ',country.ilike.' + s);
+      }
+      return q;
+    }
+
+    const bandResults = await Promise.all(SIZE_BANDS.map(b => {
+      let q = baseQuery().gte('employee_count_numeric', b.min);
+      if (b.max !== null) q = q.lte('employee_count_numeric', b.max);
+      return q;
+    }));
+    const unparsedResult = await baseQuery().is('employee_count_numeric', null);
+
+    setSizeBandCounts(
+      SIZE_BANDS.map((b, i) => ({ ...b, count: bandResults[i].count || 0 }))
+        .concat([{ key: 'unparsed', label: 'Unparsed / unknown', count: unparsedResult.count || 0 }])
+    );
+    setSizeBandLoading(false);
+  }, [user.id, canViewAll, filterBy, acctIndustryFilter, acctNeverTouched, acctLastTouchedFrom, acctLastTouchedTo, acctFreshCountFilter, search]);
+
+  useEffect(() => { fetchSizeBands(); }, [fetchSizeBands]);
 
   useEffect(() => {
     supabase.from('accounts').select('industry').not('industry', 'is', null).neq('industry', '')
@@ -593,10 +667,41 @@ export default function Accounts() {
       {/* RIGHT PANEL */}
       <div style={{ flex: 1, overflowY: 'auto', background: '#f8f9fb' }}>
         {!selected ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9ca3af' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🏢</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#6b7280' }}>Select an account</div>
-            <div style={{ fontSize: 13, marginTop: 6 }}>or click + Add to create one</div>
+          <div style={{ padding: '32px 28px', maxWidth: 560, margin: '0 auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: '#9ca3af', marginBottom: 28 }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>🏢</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#6b7280' }}>Select an account</div>
+              <div style={{ fontSize: 13, marginTop: 4 }}>or click + Add to create one</div>
+            </div>
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 18px' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Accounts by size</div>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 14 }}>By employee headcount, matching your current filters (except headcount itself)</div>
+              {sizeBandLoading && !sizeBandCounts ? (
+                <div style={{ fontSize: 12, color: '#9ca3af', padding: '8px 0' }}>Loading…</div>
+              ) : sizeBandCounts ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {(() => {
+                    const max = Math.max(1, ...sizeBandCounts.map(b => b.count));
+                    return sizeBandCounts.map(b => (
+                      <div key={b.key}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+                          <span style={{ color: '#555' }}>{b.label}</span>
+                          <span style={{ fontWeight: 600, color: b.key === 'unparsed' ? '#b45309' : '#111' }}>{b.count}</span>
+                        </div>
+                        <div style={{ height: 6, background: '#f0f0ed', borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ width: (Math.round((b.count / max) * 100)) + '%', height: '100%', background: b.key === 'unparsed' ? '#f59e0b' : '#2563eb', borderRadius: 3 }} />
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              ) : null}
+              {sizeBandCounts && sizeBandCounts.find(b => b.key === 'unparsed') && sizeBandCounts.find(b => b.key === 'unparsed').count > 0 && (
+                <div style={{ marginTop: 12, fontSize: 11, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '6px 8px' }}>
+                  ⚠ {sizeBandCounts.find(b => b.key === 'unparsed').count} account(s) have no parseable headcount — their employee_count text didn't match a number, so they're excluded from every band above.
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <AccountDetail key={selected.id} account={selected} contacts={contactsByAccount[selected.id] || []} onUpdate={fetchAll} navigate={navigate} />
