@@ -59,6 +59,17 @@ function computeDue(c, cadence) {
   if (c.last_contacted) { const d=new Date(c.last_contacted); d.setDate(d.getDate()+days); return skipWeekend(d); }
   return c.next_followup ? new Date(c.next_followup) : null;
 }
+// A Warm/Prospect reply that hasn't been touched in a couple of days is
+// easy to lose track of in a busy queue -- in an email-only motion there's
+// no other channel to rescue it once it's gone quiet, so this needs to
+// surface on its own rather than wait for the next scheduled follow-up.
+const STALE_DAYS = 2;
+function isStale(c) {
+  if (c.response_type !== 'warm' && c.response_type !== 'prospect') return false;
+  if (!c.last_touchpoint_date) return true;
+  const cutoff = Date.now() - STALE_DAYS * 86400000;
+  return new Date(c.last_touchpoint_date).getTime() < cutoff;
+}
 function getBucket(due) {
   if (!due) return 'nodate';
   const now=new Date(); if(due<now) return 'overdue';
@@ -110,6 +121,7 @@ export default function FollowUps() {
   const [stageFilter,    setStageFilter]    = useState('all');
   const [timingFilter,   setTimingFilter]   = useState('all');
   const [responseFilter, setResponseFilter] = useState('all');
+  const [staleOnly,      setStaleOnly]      = useState(false);
   const [companyFilter,  setCompanyFilter]  = useState('all');
   const [listFilter,     setListFilter]     = useState('all');
   const [senderFilter,   setSenderFilter]   = useState('all');
@@ -457,6 +469,7 @@ export default function FollowUps() {
   const overdueCt=[...enriched,...enrichedFresh].filter(c=>c._bucket==='overdue').length;
   const todayCt=[...enriched,...enrichedFresh].filter(c=>c._bucket==='today').length;
   const readyCt=[...enriched,...enrichedFresh].filter(c=>c._hasDraft).length;
+  const staleCt=[...enriched,...enrichedFresh].filter(isStale).length;
   const uniqueCompanies=[...new Set(contacts.map(c=>c.company).filter(Boolean))].sort();
   const uniqueSenders=[...new Set(contacts.map(c=>c.sender_email).filter(Boolean))].sort();
 
@@ -464,6 +477,7 @@ export default function FollowUps() {
     return list.filter(c=>{
       if(stageFilter!=='all'&&c.status!==stageFilter) return false;
       if(timingFilter!=='all'&&c._bucket!==timingFilter) return false;
+      if(staleOnly&&!isStale(c)) return false;
       if(responseFilter!=='all'&&c.response_type!==responseFilter) return false;
       if(companyFilter!=='all'&&c.company!==companyFilter) return false;
       if(senderFilter!=='all'&&c.sender_email!==senderFilter) return false;
@@ -542,6 +556,10 @@ export default function FollowUps() {
               style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:700,color:'#dc2626',cursor:'pointer',
                 background:timingFilter==='overdue'?'#fee2e2':'#fff5f5',border:`1.5px solid ${timingFilter==='overdue'?'#dc2626':'#fca5a5'}`}}>
               {overdueCt} overdue</div>}
+            {staleCt>0&&<div onClick={()=>setStaleOnly(v=>!v)}
+              style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:700,color:'#b45309',cursor:'pointer',
+                background:staleOnly?'#fef3c7':'#fffbeb',border:`1.5px solid ${staleOnly?'#d97706':'#fde68a'}`}}>
+              ⚠ {staleCt} going cold</div>}
             {todayCt>0&&<div onClick={()=>setTimingFilter(f=>f==='today'?'all':'today')}
               style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:700,color:'#059669',cursor:'pointer',
                 background:timingFilter==='today'?'#d1fae5':'#f0fdf4',border:`1.5px solid ${timingFilter==='today'?'#059669':'#6ee7b7'}`}}>
