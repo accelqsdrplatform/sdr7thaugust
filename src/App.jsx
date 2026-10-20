@@ -28,6 +28,7 @@ const ApolloImport  = lazy(() => import('./pages/ApolloImport'));
 const Responses    = lazy(() => import('./pages/Responses'));
 const ProspectDiscovery = lazy(() => import('./pages/ProspectDiscovery'));
 const Scorecard     = lazy(() => import('./pages/Scorecard'));
+const ScorecardPicker = lazy(() => import('./pages/ScorecardPicker'));
 const Mailboxes     = lazy(() => import('./pages/Mailboxes'));
 
 const PageLoader = () => (
@@ -87,6 +88,7 @@ export default function App() {
               <Route path="apollo-import" element={<ApolloImport />} />
               <Route path="responses" element={<Responses />} />
               <Route path="prospect-discovery" element={<ProspectDiscovery />} />
+              <Route path="scorecard" element={<ScorecardPicker />} />
               <Route path="scorecard/:userId" element={<Scorecard />} />
               <Route path="mailboxes" element={<Mailboxes />} />
             </Route>
