@@ -97,7 +97,14 @@ export default function Sidebar() {
   const { profile, user } = useAuth();
   const displayName = profile?.full_name || user?.email?.split('@')[0] || '—';
   const role = profile?.role || 'owner';
-  const nav = navByRole[navKeyFor(profile)] || navByRole.owner;
+  const baseNav = navByRole[navKeyFor(profile)] || navByRole.owner;
+  // Owners (individual SDRs) couldn't reach their own scorecard before --
+  // the scorecard route is now open to an owner viewing their own target_id,
+  // but there was no nav entry pointing at it. Inject one right after
+  // Dashboard rather than adding a whole new navByRole set just for this.
+  const nav = role === 'owner' && user?.id
+    ? [baseNav[0], { to: '/scorecard/' + user.id, icon: '📊', label: 'My Scorecard' }, ...baseNav.slice(1)]
+    : baseNav;
   const meta = roleMeta[role] || roleMeta.owner;
 
   const linkStyle = (isActive) => ({
