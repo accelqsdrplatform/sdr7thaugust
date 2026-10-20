@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { toast as sonnerToast } from 'sonner';
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 const US_STATES = [
@@ -279,10 +280,8 @@ export default function ProspectDiscovery() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState('all');
 
-  const [toast, setToast] = useState(null);
   const showToast = (msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+    (type === 'error' ? sonnerToast.error : sonnerToast.success)(msg);
   };
 
   const fetchHistory = useCallback(async () => {
@@ -397,20 +396,6 @@ export default function ProspectDiscovery() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', padding: '24px 28px', fontFamily: 'inherit' }}>
-      {/* Toast */}
-      {toast && (
-        <div style={{
-          position: 'fixed', bottom: 28, right: 28, zIndex: 9999,
-          background: toast.type === 'error' ? '#fef2f2' : '#0f172a',
-          color: toast.type === 'error' ? '#991b1b' : '#fff',
-          border: toast.type === 'error' ? '1px solid #fecaca' : 'none',
-          padding: '11px 20px', borderRadius: 10, fontSize: 13, fontWeight: 500,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          {toast.msg}
-        </div>
-      )}
-
       {/* Page header */}
       <div style={{ maxWidth: 1140, margin: '0 auto 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
