@@ -104,6 +104,10 @@ export default function Scorecard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [days, setDays] = useState(7);
+  const [customRange, setCustomRange] = useState(null); // { from, to } | null -- takes priority over `days` when set
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
 
   const isAdmin = profile?.role === 'admin';
   const viewAsParam = viewingAs?.id ? { view_as: viewingAs.id } : {};
@@ -111,10 +115,11 @@ export default function Scorecard() {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    callFn({ target_id: userId, days, ...viewAsParam })
+    const rangeParams = customRange ? { from: customRange.from, to: customRange.to } : { days };
+    callFn({ target_id: userId, ...rangeParams, ...viewAsParam })
       .then(d => { setData(d); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [userId, days, viewingAs?.id]);
+  }, [userId, days, customRange, viewingAs?.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -163,18 +168,48 @@ export default function Scorecard() {
         </div>
         <div style={{ display: 'flex', gap: 4, background: '#f5f5f3', borderRadius: 8, padding: 3 }}>
           {DAY_OPTIONS.map(d => (
-            <button key={d} onClick={() => setDays(d)}
+            <button key={d} onClick={() => { setCustomRange(null); setShowCustomPicker(false); setDays(d); }}
               style={{ padding: '6px 12px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                background: days === d ? '#fff' : 'transparent', color: days === d ? '#111' : '#888',
-                boxShadow: days === d ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
+                background: !customRange && days === d ? '#fff' : 'transparent', color: !customRange && days === d ? '#111' : '#888',
+                boxShadow: !customRange && days === d ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
               {d}d
             </button>
           ))}
+          <button onClick={() => setShowCustomPicker(s => !s)}
+            style={{ padding: '6px 12px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+              background: customRange ? '#fff' : 'transparent', color: customRange ? '#111' : '#888',
+              boxShadow: customRange ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
+            Custom
+          </button>
         </div>
       </div>
 
+      {showCustomPicker && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '10px 14px', background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 8 }}>
+          <span style={{ fontSize: 12, color: '#888' }}>Custom range:</span>
+          <input type="date" value={customFrom} max={customTo || undefined} onChange={e => setCustomFrom(e.target.value)}
+            style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '0.5px solid #e8e8e4' }} />
+          <span style={{ fontSize: 12, color: '#888' }}>to</span>
+          <input type="date" value={customTo} min={customFrom || undefined} onChange={e => setCustomTo(e.target.value)}
+            style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '0.5px solid #e8e8e4' }} />
+          <button onClick={() => { if (customFrom && customTo) { setCustomRange({ from: customFrom, to: customTo }); setShowCustomPicker(false); } }}
+            disabled={!customFrom || !customTo}
+            style={{ padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 600,
+              cursor: customFrom && customTo ? 'pointer' : 'not-allowed',
+              background: customFrom && customTo ? '#2563eb' : '#e5e7eb', color: customFrom && customTo ? '#fff' : '#9ca3af' }}>
+            Apply
+          </button>
+          {customRange && (
+            <button onClick={() => { setCustomRange(null); setShowCustomPicker(false); }}
+              style={{ padding: '6px 10px', borderRadius: 6, border: '0.5px solid #e8e8e4', fontSize: 12, background: '#fff', color: '#888', cursor: 'pointer' }}>
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {/* At a glance */}
-      <Card title="At a glance" subtitle={`Last ${days} days vs. the ${days} days before that`} style={{ marginBottom: 16 }}>
+      <Card title="At a glance" subtitle={customRange ? (customRange.from + ' to ' + customRange.to + ', vs. an equal-length period before it') : ('Last ' + days + ' days vs. the ' + days + ' days before that')} style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
           <Stat label="Activity logged" value={at_a_glance.activity_count_current}
             delta={<Delta current={at_a_glance.activity_count_current} previous={at_a_glance.activity_count_previous} />} />
