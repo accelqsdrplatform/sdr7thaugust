@@ -185,7 +185,7 @@ function FilterPill({ label, active, onClick }) {
   return (
     <button onClick={onClick} style={{
       padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: 'none',
-      background: active ? '#2563eb' : '#f0f0ee', color: active ? '#fff' : '#666', transition: 'all 0.15s',
+      background: active ? '#2563eb' : '#f0f0ee', color: active ? '#fff' : '#666', transition: 'background 0.15s, color 0.15s',
       whiteSpace: 'nowrap',
     }}>{label}</button>
   );
@@ -1705,7 +1705,7 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
               padding: '9px 18px', fontSize: 13, fontWeight: activeTab === t.key ? 600 : 400,
               color: activeTab === t.key ? '#2563eb' : '#6b7280', background: 'none', border: 'none',
               borderBottom: `2px solid ${activeTab === t.key ? '#2563eb' : 'transparent'}`,
-              cursor: 'pointer', transition: 'all 0.15s', marginBottom: -1,
+              cursor: 'pointer', transition: 'color 0.15s, border-bottom-color 0.15s', marginBottom: -1,
             }}>{t.label}</button>
           ))}
         </div>
