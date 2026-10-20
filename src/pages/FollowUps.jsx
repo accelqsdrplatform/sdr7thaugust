@@ -624,7 +624,7 @@ export default function FollowUps() {
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
                   <div onClick={toggleAutoGen}
                     style={{position:'relative',width:46,height:26,borderRadius:13,cursor:'pointer',background:autoGenerate?'#2563eb':'#d1d5db',transition:'background 0.2s',flexShrink:0}}>
-                    <div style={{position:'absolute',top:3,left:autoGenerate?23:3,width:20,height:20,borderRadius:'50%',background:'#fff',boxShadow:'0 1px 4px rgba(0,0,0,0.25)',transition:'left 0.2s'}}/>
+                    <div style={{position:'absolute',top:3,left:3,width:20,height:20,borderRadius:'50%',background:'#fff',boxShadow:'0 1px 4px rgba(0,0,0,0.25)',transform:autoGenerate?'translateX(20px)':'translateX(0)',transition:'transform 0.2s ease-out'}}/>
                   </div>
                   <div style={{fontSize:13,fontWeight:600,color:autoGenerate?'#2563eb':'#6b7280'}}>{autoGenerate?'On':'Off'}</div>
                 </div>
