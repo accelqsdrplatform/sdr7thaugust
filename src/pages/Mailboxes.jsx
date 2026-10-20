@@ -3,6 +3,10 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 const ACTIVE_STATUSES_EXCLUDE = ['won', 'lost', 'bounced', 'unsubscribed'];
+// A bounce rate above this starts putting the mailbox's sender reputation at
+// risk for every email after it, not just the ones that bounced -- worth a
+// proactive warning rather than waiting for someone to notice the column.
+const BOUNCE_WARN_THRESHOLD = 5;
 
 function startOfTodayISO() {
   const d = new Date();
@@ -59,17 +63,23 @@ export default function Mailboxes() {
     const contactById = Object.fromEntries((contacts || []).map(c => [c.id, c]));
 
     const stats = {};
-    (accounts || []).forEach(a => { stats[a.id] = { active: 0, sentToday: 0 }; });
+    (accounts || []).forEach(a => { stats[a.id] = { active: 0, sentToday: 0, total: 0, bounced: 0 }; });
     (contacts || []).forEach(c => {
       if (!stats[c.sender_account_id]) return;
       if (!ACTIVE_STATUSES_EXCLUDE.includes(c.status)) stats[c.sender_account_id].active += 1;
+      stats[c.sender_account_id].total += 1;
+      if (c.status === 'bounced') stats[c.sender_account_id].bounced += 1;
     });
     emailsToday.forEach(e => {
       const c = contactById[e.contact_id];
       if (c && stats[c.sender_account_id]) stats[c.sender_account_id].sentToday += 1;
     });
 
-    setMailboxes((accounts || []).map(a => ({ ...a, ...stats[a.id] })));
+    setMailboxes((accounts || []).map(a => {
+      const s = stats[a.id];
+      const bounceRate = s.total > 0 ? Math.round((s.bounced / s.total) * 1000) / 10 : 0;
+      return { ...a, ...s, bounceRate };
+    }));
     setLoading(false);
   }
 
@@ -126,6 +136,16 @@ export default function Mailboxes() {
         </button>
       </div>
 
+      {mailboxes.some(mb => mb.bounceRate >= BOUNCE_WARN_THRESHOLD) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', marginBottom: 16, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10 }}>
+          <span style={{ fontSize: 18 }}>⚠</span>
+          <div style={{ fontSize: 13, color: '#991b1b' }}>
+            {mailboxes.filter(mb => mb.bounceRate >= BOUNCE_WARN_THRESHOLD).map(mb => mb.email_address).join(', ')}
+            {' '}{mailboxes.filter(mb => mb.bounceRate >= BOUNCE_WARN_THRESHOLD).length === 1 ? 'has' : 'have'} a bounce rate at or above {BOUNCE_WARN_THRESHOLD}% — sending reputation is at risk. Pause new sends on this mailbox and clean up the contact list before continuing.
+          </div>
+        </div>
+      )}
+
       {showAdd && (
         <div style={{ background: '#fff', border: '1px solid #e8e8e4', borderRadius: 10, padding: 18, marginBottom: 20, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div style={{ flex: 2, minWidth: 220 }}>
@@ -162,7 +182,7 @@ export default function Mailboxes() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#fafafa', borderBottom: '1px solid #eee' }}>
-                {['Mailbox', 'Label', 'Active Contacts', 'Sent Today', 'Daily Cap', 'Status', 'Actions'].map(h => (
+                {['Mailbox', 'Label', 'Active Contacts', 'Sent Today', 'Bounce Rate', 'Daily Cap', 'Status', 'Actions'].map(h => (
                   <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>
                 ))}
               </tr>
@@ -181,6 +201,11 @@ export default function Mailboxes() {
                     <td style={{ padding: '10px 14px', color: '#444' }}>{mb.active}</td>
                     <td style={{ padding: '10px 14px' }}>
                       <span style={{ color: nearCap ? '#dc2626' : '#444', fontWeight: nearCap ? 600 : 400 }}>{mb.sentToday}</span>
+                    </td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <span style={{ color: mb.bounceRate >= BOUNCE_WARN_THRESHOLD ? '#dc2626' : '#444', fontWeight: mb.bounceRate >= BOUNCE_WARN_THRESHOLD ? 700 : 400 }}>
+                        {mb.bounceRate >= BOUNCE_WARN_THRESHOLD ? '⚠ ' : ''}{mb.bounceRate}%
+                      </span>
                     </td>
                     <td style={{ padding: '10px 14px' }}>
                       {editingId === mb.id
