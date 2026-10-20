@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext'; import { markContactBounced } from '../utils/bounce';
+import { toast } from 'sonner';
 
 const STATUSES = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'won', 'lost', 'bounced', 'unsubscribed'];
 
@@ -341,7 +342,7 @@ export default function Contacts() {
     setDupeModal(false);
     setDupeGroups([]);
     fetchContacts();
-    alert(`Done — deleted ${deleted} duplicate contact${deleted !== 1 ? 's' : ''}.`);
+    toast.success(`Done — deleted ${deleted} duplicate contact${deleted !== 1 ? 's' : ''}.`);
   }
 
   async function applyListFilter(listId) {
