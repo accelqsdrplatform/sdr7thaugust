@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { toast } from 'sonner';
 
 async function callApollo(action, params = {}) {
   const { data, error } = await supabase.functions.invoke('apollo-proxy', { body: { action, ...params } });
@@ -210,7 +211,7 @@ export default function ApolloImport() {
     let { byDomain, byName } = await fetchAccountMaps(assignTo);
     if (toCreate.length > 0) {
       if (!assignTo) {
-        alert('Could not create accounts: no owner selected. Please select an owner and try again.');
+        toast.error('Could not create accounts: no owner selected. Please select an owner and try again.');
         setStep('reviewing-accounts');
         return;
       }
@@ -220,7 +221,7 @@ export default function ApolloImport() {
       ).select('id, name, website');
       if (error) {
         console.error('Account creation failed:', error);
-        alert('Account creation failed: ' + error.message + '\n\nContacts were not imported. Please fix the issue and try again.');
+        toast.error('Account creation failed: ' + error.message + '\n\nContacts were not imported. Please fix the issue and try again.');
         setStep('reviewing-accounts');
         return;
       }
