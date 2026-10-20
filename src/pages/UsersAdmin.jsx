@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { toast as sonnerToast } from 'sonner';
 
 const ROLES = ['owner', 'sub-admin', 'admin'];
 const ROLE_LABELS = { owner: 'Owner', 'sub-admin': 'Sub-admin', admin: 'Admin' };
@@ -137,7 +138,6 @@ export default function UsersAdmin() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState({});
   const [switching, setSwitching] = useState({});
-  const [toast, setToast] = useState(null);
   const [editing, setEditing] = useState({}); // { userId: { role, full_name, region, reports_to } }
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -156,7 +156,7 @@ export default function UsersAdmin() {
         setManagerOptions(d.manager_options || []);
         setLoading(false);
       })
-      .catch(e => { setToast({ msg: e.message, type: 'error' }); setLoading(false); });
+      .catch(e => { sonnerToast.error(e.message); setLoading(false); });
   }, [viewingAs?.id, refreshKey]);
 
   function startEdit(u) {
@@ -201,8 +201,7 @@ export default function UsersAdmin() {
   }
 
   function showToast(msg, type = 'success') {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+    (type === 'error' ? sonnerToast.error : sonnerToast.success)(msg);
   }
 
   if (!['admin', 'sub-admin'].includes(profile?.role)) {
@@ -221,16 +220,6 @@ export default function UsersAdmin() {
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 900 }}>
-      {toast && (
-        <div style={{ position: 'fixed', top: 20, right: 24, zIndex: 9999,
-          background: toast.type === 'error' ? '#fef2f2' : '#f0fdf4',
-          border: `1px solid ${toast.type === 'error' ? '#fca5a5' : '#86efac'}`,
-          color: toast.type === 'error' ? '#dc2626' : '#166534',
-          padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 500 }}>
-          {toast.msg}
-        </div>
-      )}
-
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111', marginBottom: 4 }}>Team Members</h1>
         <p style={{ fontSize: 13, color: '#888' }}>
