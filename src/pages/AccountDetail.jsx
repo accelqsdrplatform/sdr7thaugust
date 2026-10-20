@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { GICS_SECTORS } from '../constants/industries';
 
 const STATUS_COLORS = {
   prospecting:  { bg: '#e0f2fe', color: '#0369a1' },
@@ -235,8 +236,20 @@ export default function AccountDetail() {
               ].map(f => (
                 <div key={f.key}>
                   <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 4 }}>{f.label}</label>
-                  <input value={editData[f.key] || ''} onChange={e => setEditData({ ...editData, [f.key]: e.target.value })}
-                    style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1px solid #e0e0e0', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  {f.key === 'industry' ? (
+                    <select value={editData[f.key] || ''} onChange={e => setEditData({ ...editData, [f.key]: e.target.value })}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1px solid #e0e0e0', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                      <option value="">Select industry...</option>
+                      {GICS_SECTORS.map(g => (
+                        <optgroup key={g.sector} label={g.sector}>
+                          {g.industries.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={editData[f.key] || ''} onChange={e => setEditData({ ...editData, [f.key]: e.target.value })}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1px solid #e0e0e0', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  )}
                 </div>
               ))}
             </div>
