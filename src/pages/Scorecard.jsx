@@ -181,7 +181,7 @@ export default function Scorecard() {
           <Stat label="Days active" value={`${at_a_glance.days_active_current_period}/${days}`} />
           <Stat label="Replies received" value={at_a_glance.replies.current}
             delta={<Delta current={at_a_glance.replies.current} previous={at_a_glance.replies.previous} />} />
-          <Stat label="Meetings (all-time)" value={at_a_glance.meetings_all_time} />
+          <Stat label="Demo Scheduled (all-time)" value={at_a_glance.prospects_all_time} />
           <Stat label="Won (all-time)" value={at_a_glance.won_all_time} />
           <div style={{ flex: 1, minWidth: 160 }}>
             <div style={{ fontSize: 11, color: '#999', marginBottom: 4 }}>Last activity</div>
@@ -216,6 +216,10 @@ export default function Scorecard() {
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                 <span style={{ color: '#555' }}>Reply rate</span>
                 <span style={{ fontWeight: 700, color: '#111' }}>{quality.reply_rate}%</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                <span style={{ color: '#555' }}>Prospect rate (Demo Scheduled)</span>
+                <span style={{ fontWeight: 700, color: '#111' }}>{quality.prospect_rate}%</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                 <span style={{ color: '#555' }}>Bounce rate</span>
