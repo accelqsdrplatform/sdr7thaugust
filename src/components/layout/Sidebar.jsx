@@ -26,6 +26,7 @@ const navByRole = {
   'sub-admin-direct': [
     { to: '/', icon: '⊞', label: 'Dashboard', end: true },
     { to: '/prospect-discovery', icon: '🔍', label: 'Account Discovery' },
+    { to: '/scorecard', icon: '📊', label: 'Scorecards' },
     { to: '/teams', icon: '👥', label: 'My team' },
     { to: '/users', icon: '🧑‍💼', label: 'Team Members' },
     { to: '/contacts', icon: '📋', label: 'Contacts' },
@@ -43,6 +44,7 @@ const navByRole = {
   'sub-admin-team': [
     { to: '/', icon: '⊞', label: 'Dashboard', end: true },
     { to: '/prospect-discovery', icon: '🔍', label: 'Account Discovery' },
+    { to: '/scorecard', icon: '📊', label: 'Scorecards' },
     { to: '/contacts', icon: '👥', label: 'My Contacts' },
     { to: '/accounts', icon: '🏢', label: 'Accounts' },
     { to: '/apollo-import', icon: '🚀', label: 'Apollo Import' },
@@ -56,6 +58,7 @@ const navByRole = {
   admin: [
     { to: '/', icon: '⊞', label: 'Dashboard', end: true },
     { to: '/prospect-discovery', icon: '🔍', label: 'Account Discovery' },
+    { to: '/scorecard', icon: '📊', label: 'Scorecards' },
     { to: '/contacts', icon: '👥', label: 'My Contacts' },
     { to: '/accounts', icon: '🏢', label: 'Accounts' },
     { to: '/apollo-import', icon: '🚀', label: 'Apollo Import' },
