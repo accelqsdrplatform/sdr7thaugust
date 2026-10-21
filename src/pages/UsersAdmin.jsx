@@ -130,6 +130,107 @@ function PendingApprovals({ isAdmin, managerOptions, onChanged, showToast }) {
   );
 }
 
+function buildOrgTree(users) {
+  const byId = {};
+  users.forEach(function (u) { byId[u.id] = Object.assign({}, u, { children: [] }); });
+  const roots = [];
+  users.forEach(function (u) {
+    if (u.reports_to && byId[u.reports_to]) byId[u.reports_to].children.push(byId[u.id]);
+    else roots.push(byId[u.id]);
+  });
+  Object.values(byId).forEach(function (n) {
+    n.children.sort(function (a, b) { return (a.full_name || '').localeCompare(b.full_name || ''); });
+  });
+  roots.sort(function (a, b) { return (a.full_name || '').localeCompare(b.full_name || ''); });
+  return roots;
+}
+
+function OrgChartNode({ node, onSelect, selectedId }) {
+  const rc = node.role ? ROLE_COLORS[node.role] : { bg: '#f5f5f3', color: '#888' };
+  return (
+    <li>
+      <div className="org-node" onClick={() => onSelect(node)}
+        style={{
+          display: 'inline-block', background: '#fff',
+          border: selectedId === node.id ? '1.5px solid #2563eb' : '0.5px solid #e8e8e4',
+          borderRadius: 10, padding: '10px 16px', cursor: 'pointer', minWidth: 160, textAlign: 'left',
+          boxShadow: selectedId === node.id ? '0 2px 8px rgba(37,99,235,0.15)' : 'none',
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#f0f0ed', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#555', flexShrink: 0 }}>
+            {(node.full_name || node.email || '?')[0].toUpperCase()}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: '#111', whiteSpace: 'nowrap' }}>
+              {node.full_name || node.email}
+            </div>
+            <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 10, background: rc.bg, color: rc.color }}>
+              {node.role ? ROLE_LABELS[node.role] : 'No role'}
+            </span>
+          </div>
+        </div>
+        {node.region && <div style={{ fontSize: 10, color: '#aaa', marginTop: 5 }}>{node.region}</div>}
+      </div>
+      {node.children.length > 0 && (
+        <ul>
+          {node.children.map(c => (
+            <OrgChartNode key={c.id} node={c} onSelect={onSelect} selectedId={selectedId} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function OrgChart({ users }) {
+  const [selected, setSelected] = useState(null);
+  const roots = buildOrgTree(users);
+  return (
+    <div>
+      <style>{`
+        .accelq-orgchart, .accelq-orgchart ul, .accelq-orgchart li { list-style:none; margin:0; padding:0; position:relative; }
+        .accelq-orgchart { display:table; margin:0 auto; text-align:center; }
+        .accelq-orgchart ul { display:table; width:100%; }
+        .accelq-orgchart li { display:table-cell; padding:28px 10px 0; vertical-align:top; }
+        .accelq-orgchart li:before {
+          outline: solid 1.5px #d8d8d2; content:""; left:0; position:absolute; right:0; top:0;
+        }
+        .accelq-orgchart li:first-child:before { left:50%; }
+        .accelq-orgchart li:last-child:before { right:50%; }
+        .accelq-orgchart li:only-child:before { display:none; }
+        .accelq-orgchart li:only-child { padding-top:0; }
+        .accelq-orgchart .org-node { display:inline-block; position:relative; margin-bottom:8px; }
+        .accelq-orgchart ul:before, .accelq-orgchart .org-node:before {
+          outline: solid 1.5px #d8d8d2; content:""; height:28px; left:50%; position:absolute;
+        }
+        .accelq-orgchart ul:before { top:-28px; }
+        .accelq-orgchart .org-node:before { top:-32px; }
+        .accelq-orgchart > li { margin-top:0; }
+        .accelq-orgchart > li:before, .accelq-orgchart > li:after, .accelq-orgchart > li > .org-node:before {
+          outline:none;
+        }
+      `}</style>
+      <div style={{ overflowX: 'auto', padding: '24px 12px' }}>
+        <ul className="accelq-orgchart">
+          {roots.map(r => (
+            <OrgChartNode key={r.id} node={r} onSelect={setSelected} selectedId={selected && selected.id} />
+          ))}
+        </ul>
+      </div>
+      {selected && (
+        <div style={{ marginTop: 8, padding: '16px 20px', background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, maxWidth: 420 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{selected.full_name || selected.email}</div>
+          <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{selected.email}</div>
+          {selected.region && <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>Region: {selected.region}</div>}
+          <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>{selected.children.length} direct report{selected.children.length === 1 ? '' : 's'}</div>
+          <button onClick={() => setSelected(null)} style={{ marginTop: 10, fontSize: 12, padding: '5px 12px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer' }}>Close</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function UsersAdmin() {
   const { profile, user, viewAsUser, viewingAs } = useAuth();
   const navigate = useNavigate();
@@ -140,6 +241,7 @@ export default function UsersAdmin() {
   const [switching, setSwitching] = useState({});
   const [editing, setEditing] = useState({}); // { userId: { role, full_name, region, reports_to } }
   const [refreshKey, setRefreshKey] = useState(0);
+  const [view, setView] = useState('list');
 
   const isAdmin = profile?.role === 'admin';
   const isSubAdmin = profile?.role === 'sub-admin';
@@ -219,13 +321,29 @@ export default function UsersAdmin() {
   }
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 900 }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111', marginBottom: 4 }}>Team Members</h1>
-        <p style={{ fontSize: 13, color: '#888' }}>
-          {isAdmin ? 'Assign roles, regions and reporting lines for your whole org. Use View as to see the platform through any team member’s eyes.' :
-            'Manage your team — assign regions and reporting lines within your own downline.'} {users.length} users {isAdmin ? 'total' : 'in your team'}.
-        </p>
+    <div style={{ padding: '24px 32px', maxWidth: view === 'chart' ? 'none' : 900 }}>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111', marginBottom: 4 }}>Team Members</h1>
+          <p style={{ fontSize: 13, color: '#888' }}>
+            {isAdmin ? 'Assign roles, regions and reporting lines for your whole org. Use View as to see the platform through any team member’s eyes.' :
+              'Manage your team — assign regions and reporting lines within your own downline.'} {users.length} users {isAdmin ? 'total' : 'in your team'}.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 4, background: '#f5f5f3', borderRadius: 8, padding: 3, flexShrink: 0 }}>
+          <button onClick={() => setView('list')}
+            style={{ padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+              background: view === 'list' ? '#fff' : 'transparent', color: view === 'list' ? '#111' : '#888',
+              boxShadow: view === 'list' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
+            ☰ List
+          </button>
+          <button onClick={() => setView('chart')}
+            style={{ padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+              background: view === 'chart' ? '#fff' : 'transparent', color: view === 'chart' ? '#111' : '#888',
+              boxShadow: view === 'chart' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
+            🗂️ Org Chart
+          </button>
+        </div>
       </div>
 
       <PendingApprovals
@@ -237,6 +355,8 @@ export default function UsersAdmin() {
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 48, color: '#aaa' }}>Loading team…</div>
+      ) : view === 'chart' ? (
+        <OrgChart users={users} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {users.map(u => {
