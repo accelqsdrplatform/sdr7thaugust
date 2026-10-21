@@ -33,6 +33,16 @@ function computeDownline(rootId: string, allRows: { user_id: string; reports_to:
   return seen;
 }
 
+// Direct reports only (plus self) — NOT the full transitive downline.
+// Sub-admins should only see/manage people who report to them directly.
+function directReportIds(rootId: string, allRows: { user_id: string; reports_to: string | null }[]): Set<string> {
+  const ids = new Set<string>([rootId]);
+  for (const row of allRows) {
+    if (row.reports_to === rootId) ids.add(row.user_id);
+  }
+  return ids;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
@@ -119,7 +129,7 @@ Deno.serve(async (req: Request) => {
 
       let visibleIds: Set<string> | null = null; // null = everyone (admin)
       if (!effectiveIsAdmin) {
-        visibleIds = computeDownline(effectiveId, rows);
+        visibleIds = directReportIds(effectiveId, rows);
       }
 
       const result = users
@@ -208,17 +218,17 @@ Deno.serve(async (req: Request) => {
 
       if (!effectiveIsAdmin) {
         // Sub-admins (real or previewed via view_as) may only touch users
-        // within their own downline (or themselves).
-        const downline = computeDownline(effectiveId, rows);
-        if (!downline.has(user_id)) {
+        // who report directly to them (or themselves) — not their whole downline.
+        const direct = directReportIds(effectiveId, rows);
+        if (!direct.has(user_id)) {
           return ok({ error: "Forbidden — that user isn't on your team" });
         }
         // No privilege escalation: a sub-admin can never grant admin or sub-admin role.
         if (role && ['admin', 'sub-admin'].includes(role)) {
           return ok({ error: "Forbidden — only an admin can grant admin or sub-admin access" });
         }
-        // A sub-admin may only re-point reports_to at someone inside their own downline.
-        if (reports_to && !downline.has(reports_to)) {
+        // A sub-admin may only re-point reports_to at someone who reports directly to them.
+        if (reports_to && !direct.has(reports_to)) {
           return ok({ error: "Forbidden — can only reassign within your own team" });
         }
       }
