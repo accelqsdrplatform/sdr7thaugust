@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 async function callFn(body) {
   const { data, error } = await supabase.functions.invoke('admin-users', { body });
@@ -13,16 +14,23 @@ const ROLE_LABELS = { owner: 'Owner', 'sub-admin': 'Sub-admin', admin: 'Admin' }
 
 export default function ScorecardPicker() {
   const navigate = useNavigate();
+  const { viewingAs } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
 
+  // Respect an admin's "View as" preview — otherwise this always lists
+  // everyone (the real admin's own full view) even while previewing a
+  // sub-admin, instead of that sub-admin's own scoped team.
+  const viewAsParam = viewingAs?.id ? { view_as: viewingAs.id } : {};
+
   useEffect(() => {
-    callFn({ action: 'list_users' })
+    setLoading(true);
+    callFn({ action: 'list_users', ...viewAsParam })
       .then(d => { setUsers(d.users || []); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, []);
+  }, [viewingAs?.id]);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
