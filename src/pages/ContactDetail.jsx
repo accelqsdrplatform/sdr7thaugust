@@ -321,6 +321,11 @@ export default function ContactDetail() {
     fetchNotes(contact?.company);
   }
 
+  async function deleteNote(table, noteId) {
+    await supabase.from(table).delete().eq('id', noteId);
+    fetchNotes(contact?.company);
+  }
+
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#aaa', fontSize: 14 }}>Loading…</div>;
   if (!contact) return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 12 }}>
@@ -542,7 +547,7 @@ export default function ContactDetail() {
               <NoteSection title={`Company Notes — ${contact.company}`} subtitle="Shared across all SDRs on this account"
                 notes={companyNotes} newNote={newCompanyNote} onChangeNote={setNewCompanyNote}
                 onAdd={addCompanyNote} saving={savingNote} placeholder={`Add a note about ${contact.company}…`} isCompany
-                onEdit={(noteId, body) => editNote('company_notes', noteId, body)} />
+                onEdit={(noteId, body) => editNote('company_notes', noteId, body)} onDelete={(noteId) => deleteNote('company_notes', noteId)} currentUserId={user.id} />
             </div>
           )}
           <div style={{ gridColumn: '1 / -1' }}>
@@ -642,12 +647,12 @@ export default function ContactDetail() {
           <NoteSection title="Contact Notes" subtitle={`About ${contactName}`}
             notes={contactNotes} newNote={newContactNote} onChangeNote={setNewContactNote}
             onAdd={addContactNote} saving={savingNote} placeholder="Add a note about this contact…"
-            onEdit={(noteId, body) => editNote('contact_notes', noteId, body)} />
+            onEdit={(noteId, body) => editNote('contact_notes', noteId, body)} onDelete={(noteId) => deleteNote('contact_notes', noteId)} currentUserId={user.id} />
           {contact.company && (
             <NoteSection title={`Company Notes — ${contact.company}`} subtitle="Shared across all SDRs on this account"
               notes={companyNotes} newNote={newCompanyNote} onChangeNote={setNewCompanyNote}
               onAdd={addCompanyNote} saving={savingNote} placeholder={`Add a note about ${contact.company}…`} isCompany
-              onEdit={(noteId, body) => editNote('company_notes', noteId, body)} />
+              onEdit={(noteId, body) => editNote('company_notes', noteId, body)} onDelete={(noteId) => deleteNote('company_notes', noteId)} currentUserId={user.id} />
           )}
         </div>
       )}
@@ -734,7 +739,7 @@ function InfoRow({ label, value, isLink, danger, editable, onSave, placeholder }
   );
 }
 
-function NoteSection({ title, subtitle, notes, newNote, onChangeNote, onAdd, saving, placeholder, isCompany, onEdit }) {
+function NoteSection({ title, subtitle, notes, newNote, onChangeNote, onAdd, saving, placeholder, isCompany, onEdit, onDelete, currentUserId }) {
   return (
     <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 24 }}>
       <h2 style={{ fontSize: 15, fontWeight: 600, color: '#111', margin: '0 0 4px' }}>{title}</h2>
@@ -750,12 +755,12 @@ function NoteSection({ title, subtitle, notes, newNote, onChangeNote, onAdd, sav
       </div>
       {notes.length === 0
         ? <p style={{ fontSize: 13, color: '#bbb', textAlign: 'center', padding: '24px 0' }}>No notes yet</p>
-        : notes.map(n => <NoteCard key={n.id} note={n} isCompany={isCompany} onEdit={onEdit} />)}
+        : notes.map(n => <NoteCard key={n.id} note={n} isCompany={isCompany} onEdit={onEdit} onDelete={onDelete} currentUserId={currentUserId} />)}
     </div>
   );
 }
 
-function NoteCard({ note, isCompany, onEdit }) {
+function NoteCard({ note, isCompany, onEdit, onDelete, currentUserId }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.body);
   const author = note.authorName || 'Unknown';
@@ -767,6 +772,13 @@ function NoteCard({ note, isCompany, onEdit }) {
     setEditing(false);
   }
 
+  function remove() {
+    if (!window.confirm("Delete this note? This can't be undone.")) return;
+    onDelete?.(note.id);
+  }
+
+  const canDelete = !!onDelete && (!currentUserId || note.author_id === currentUserId);
+
   return (
     <div style={{ padding: '12px 14px', borderRadius: 8, marginBottom: 8, background: isCompany ? '#fffbeb' : '#f8f8f6', borderLeft: `3px solid ${isCompany ? '#f59e0b' : '#e0e0e0'}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -777,6 +789,12 @@ function NoteCard({ note, isCompany, onEdit }) {
             <button onClick={() => { setDraft(note.body); setEditing(true); }}
               style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}>
               Edit
+            </button>
+          )}
+          {!editing && canDelete && (
+            <button onClick={remove}
+              style={{ fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}>
+              Delete
             </button>
           )}
         </div>
@@ -792,6 +810,11 @@ function NoteCard({ note, isCompany, onEdit }) {
             <button onClick={() => setEditing(false)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#888', cursor: 'pointer' }}>
               Cancel
             </button>
+            {canDelete && (
+              <button onClick={remove} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', marginLeft: 'auto' }}>
+                Delete
+              </button>
+            )}
           </div>
         </div>
       ) : (
