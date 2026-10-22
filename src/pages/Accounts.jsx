@@ -251,7 +251,7 @@ export default function Accounts() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     let accountIdsScope = null;
-    if (!canViewAll) {
+    if (!viewAll || !canViewAll) {
       const { data: myContacts } = await supabase.from('contacts').select('account_id').eq('owner_id', user.id).not('account_id', 'is', null);
       accountIdsScope = [...new Set((myContacts || []).map(c => c.account_id))];
       if (accountIdsScope.length === 0) {
@@ -321,7 +321,7 @@ export default function Accounts() {
     const pageIds = accs.map(a => a.id);
     if (pageIds.length > 0) {
       let contactQuery = supabase.from('contacts').select('*').in('account_id', pageIds);
-      if (!canViewAll) contactQuery = contactQuery.eq('owner_id', user.id);
+      if (!viewAll || !canViewAll) contactQuery = contactQuery.eq('owner_id', user.id);
       const { data: pageContacts } = await contactQuery;
       const byAcct = {};
       (pageContacts || []).forEach(c => {
@@ -332,7 +332,7 @@ export default function Accounts() {
       setContactsByAccount({});
     }
     setLoading(false);
-  }, [user.id, canViewAll, filterBy, search, sortBy, page, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctHqFilter, acctStateFilter]);
+  }, [user.id, canViewAll, viewAll, filterBy, search, sortBy, page, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctHqFilter, acctStateFilter]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctHqFilter, acctStateFilter]);
@@ -345,7 +345,7 @@ export default function Accounts() {
   const fetchSizeBands = useCallback(async () => {
     setSizeBandLoading(true);
     let accountIdsScope = null;
-    if (!canViewAll) {
+    if (!viewAll || !canViewAll) {
       const { data: myContacts } = await supabase.from('contacts').select('account_id').eq('owner_id', user.id).not('account_id', 'is', null);
       accountIdsScope = [...new Set((myContacts || []).map(c => c.account_id))];
       if (accountIdsScope.length === 0) {
@@ -394,7 +394,7 @@ export default function Accounts() {
         .concat([{ key: 'unparsed', label: 'Unparsed / unknown', count: unparsedResult.count || 0 }])
     );
     setSizeBandLoading(false);
-  }, [user.id, canViewAll, filterBy, acctIndustryFilter, acctNeverTouched, acctLastTouchedFrom, acctLastTouchedTo, acctFreshCountFilter, search, acctHqFilter, acctStateFilter]);
+  }, [user.id, canViewAll, viewAll, filterBy, acctIndustryFilter, acctNeverTouched, acctLastTouchedFrom, acctLastTouchedTo, acctFreshCountFilter, search, acctHqFilter, acctStateFilter]);
 
   useEffect(() => { fetchSizeBands(); }, [fetchSizeBands]);
 
@@ -427,7 +427,7 @@ export default function Accounts() {
     setHygieneSelected({});
 
     let q = supabase.from('accounts').select('id,name,website,owner_id,created_at');
-    if (!canViewAll) {
+    if (!viewAll || !canViewAll) {
       const { data: myContacts } = await supabase.from('contacts').select('account_id').eq('owner_id', user.id).not('account_id', 'is', null);
       const ids = [...new Set((myContacts || []).map(c => c.account_id))];
       if (ids.length === 0) { setHygieneLoading(false); return; }
