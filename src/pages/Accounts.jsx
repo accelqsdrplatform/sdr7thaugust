@@ -215,8 +215,13 @@ export default function Accounts() {
   const [acctNeverTouched, setAcctNeverTouched] = useState(false);
   const [acctFreshCountFilter, setAcctFreshCountFilter] = useState('');
   const [acctIndustryOptions, setAcctIndustryOptions] = useState([]);
+  const [acctHqFilter, setAcctHqFilter] = useState('');
+  const [acctStateFilter, setAcctStateFilter] = useState('');
+  const [acctHqOptions, setAcctHqOptions] = useState([]);
+  const [acctStateOptions, setAcctStateOptions] = useState([]);
   const activeAcctFilterCount = (filterBy !== 'all' ? 1 : 0) + (acctIndustryFilter ? 1 : 0) + (acctHeadcountFilter ? 1 : 0)
-    + (acctNeverTouched || acctLastTouchedFrom || acctLastTouchedTo ? 1 : 0) + (acctFreshCountFilter ? 1 : 0);
+    + (acctNeverTouched || acctLastTouchedFrom || acctLastTouchedTo ? 1 : 0) + (acctFreshCountFilter ? 1 : 0)
+    + (acctHqFilter ? 1 : 0) + (acctStateFilter ? 1 : 0);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
   const [totalCount, setTotalCount] = useState(0);
@@ -271,6 +276,8 @@ export default function Accounts() {
     if (filterBy === 'notes') q = q.eq('has_notes', true);
 
     if (acctIndustryFilter) q = q.eq('industry', acctIndustryFilter);
+    if (acctHqFilter) q = q.eq('hq_city', acctHqFilter);
+    if (acctStateFilter) q = q.eq('hq_state', acctStateFilter);
     // employee_count is free-text ("10,000-50,000", "50-200 (estimated)", ...),
     // so range comparisons against it are string comparisons, not numeric ones
     // (e.g. "10,000-50,000" sorts between "1" and "50" alphabetically). Filter
@@ -325,10 +332,10 @@ export default function Accounts() {
       setContactsByAccount({});
     }
     setLoading(false);
-  }, [user.id, canViewAll, filterBy, search, sortBy, page, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter]);
+  }, [user.id, canViewAll, filterBy, search, sortBy, page, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctHqFilter, acctStateFilter]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-  useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter]);
+  useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctHqFilter, acctStateFilter]);
 
   // Accounts-by-size rollup for the right-panel summary. Mirrors fetchAll's
   // scoping/filters so it reflects the same book, but deliberately omits the
@@ -357,6 +364,8 @@ export default function Accounts() {
       if (filterBy === 'signals') q = q.or('has_legacy_tool.eq.true,is_hiring_qa.eq.true,is_funded.eq.true,has_outage.eq.true,has_leadership_change.eq.true');
       if (filterBy === 'notes') q = q.eq('has_notes', true);
       if (acctIndustryFilter) q = q.eq('industry', acctIndustryFilter);
+      if (acctHqFilter) q = q.eq('hq_city', acctHqFilter);
+      if (acctStateFilter) q = q.eq('hq_state', acctStateFilter);
       if (acctNeverTouched) q = q.is('last_touch_date', null);
       else {
         if (acctLastTouchedFrom) q = q.gte('last_touch_date', acctLastTouchedFrom);
@@ -385,7 +394,7 @@ export default function Accounts() {
         .concat([{ key: 'unparsed', label: 'Unparsed / unknown', count: unparsedResult.count || 0 }])
     );
     setSizeBandLoading(false);
-  }, [user.id, canViewAll, filterBy, acctIndustryFilter, acctNeverTouched, acctLastTouchedFrom, acctLastTouchedTo, acctFreshCountFilter, search]);
+  }, [user.id, canViewAll, filterBy, acctIndustryFilter, acctNeverTouched, acctLastTouchedFrom, acctLastTouchedTo, acctFreshCountFilter, search, acctHqFilter, acctStateFilter]);
 
   useEffect(() => { fetchSizeBands(); }, [fetchSizeBands]);
 
@@ -394,6 +403,19 @@ export default function Accounts() {
       .then(({ data }) => {
         const uniq = [...new Set((data || []).map(r => r.industry).filter(Boolean))].sort();
         setAcctIndustryOptions(uniq);
+      });
+  }, []);
+
+  useEffect(() => {
+    supabase.from('accounts').select('hq_city').not('hq_city', 'is', null).neq('hq_city', '')
+      .then(({ data }) => {
+        const uniq = [...new Set((data || []).map(r => r.hq_city).filter(Boolean))].sort();
+        setAcctHqOptions(uniq);
+      });
+    supabase.from('accounts').select('hq_state').not('hq_state', 'is', null).neq('hq_state', '')
+      .then(({ data }) => {
+        const uniq = [...new Set((data || []).map(r => r.hq_state).filter(Boolean))].sort();
+        setAcctStateOptions(uniq);
       });
   }, []);
 
@@ -812,6 +834,20 @@ export default function Accounts() {
                     style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (acctIndustryFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: acctIndustryFilter ? '#eff6ff' : '#fff', color: acctIndustryFilter ? '#1d4ed8' : '#555' }}>
                     <option value="">Industry: All</option>
                     {acctIndustryOptions.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+                  </select>
+                )}
+                {matchesAcctFilterSearch('HQ') && acctHqOptions.length > 0 && (
+                  <select value={acctHqFilter} onChange={e => setAcctHqFilter(e.target.value)}
+                    style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (acctHqFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: acctHqFilter ? '#eff6ff' : '#fff', color: acctHqFilter ? '#1d4ed8' : '#555' }}>
+                    <option value="">HQ City: All</option>
+                    {acctHqOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )}
+                {matchesAcctFilterSearch('State') && acctStateOptions.length > 0 && (
+                  <select value={acctStateFilter} onChange={e => setAcctStateFilter(e.target.value)}
+                    style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (acctStateFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: acctStateFilter ? '#eff6ff' : '#fff', color: acctStateFilter ? '#1d4ed8' : '#555' }}>
+                    <option value="">State/Region: All</option>
+                    {acctStateOptions.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 )}
                 {matchesAcctFilterSearch('Headcount') && (
