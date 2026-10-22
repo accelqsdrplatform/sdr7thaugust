@@ -21,6 +21,7 @@ export default function Settings() {
   const [clearMsg, setClearMsg] = useState('');
 
   async function clearAllData() {
+    if (!isDirector) return;
     if (clearInput !== 'DELETE') return;
     setClearing(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -149,7 +150,7 @@ export default function Settings() {
         )}
       </div>
 
-      {/* Danger Zone */}
+      {isDirector && (
       <div style={{ background: '#fff', border: '1px solid #fecaca', borderRadius: 12, padding: 20, maxWidth: 560, marginTop: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: '#dc2626', marginBottom: 6 }}>Danger Zone</div>
         <p style={{ fontSize: 13, color: '#888', marginBottom: 14, lineHeight: 1.6 }}>
@@ -185,6 +186,7 @@ export default function Settings() {
           </div>
         )}
       </div>
+      )}
 
       {/* Org info */}
       <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 20, maxWidth: 560, marginTop: 16 }}>
