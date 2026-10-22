@@ -1200,8 +1200,8 @@ const PITCH_TYPE_VALUES = new Set([
 const FIELD_GUESS = [
   { field: 'full_name',     keys: ['name','full_name','fullname','contact_name','contact'] },
   { field: 'first_name',    keys: ['first_name','firstname','first'] },
-  { field: 'last_name',     keys: ['last_name','lastname','last','surname'] },
-  { field: 'email',         keys: ['email','email_address','work_email','contact_email'] },
+  { field: 'last_name',     keys: ['last_name','lastname','last','surname','second_name','secondname','family_name'] },
+  { field: 'email',         keys: ['email','email_address','work_email','contact_email','email_id','emailid','e_mail','mail_id','mailid'] },
   { field: 'title',         keys: ['title','job_title','designation','role','position'] },
   { field: 'company',       keys: ['company','company_name','organization','organisation','account','employer'] },
   { field: 'phone',         keys: ['phone','phone_number','mobile','contact_number','telephone'] },
@@ -1348,6 +1348,16 @@ function UploadCSV({ userId, onDone }) {
   }
 
   async function applyMappingAndContinue() {
+    const mappedFields = new Set(Object.values(mapping).filter(Boolean));
+    const missing = [];
+    if (!mappedFields.has('email')) missing.push('Email');
+    if (!mappedFields.has('last_name') && !mappedFields.has('full_name')) missing.push('Last Name');
+    if (missing.length > 0) {
+      const ok = window.confirm(
+        `No column is mapped to ${missing.join(' and ')}. Contacts will be imported without ${missing.length > 1 ? 'these fields' : missing[0].toLowerCase()}, and may be hard to identify or de-duplicate later.\n\nContinue anyway?`
+      );
+      if (!ok) return;
+    }
     const rows = csvDataRows.map(vals => {
       const obj = { owner_id: userId, status: 'Fresh' };
       let firstName = '', lastName = '';
