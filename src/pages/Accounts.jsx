@@ -193,7 +193,7 @@ function FilterPill({ label, active, onClick }) {
 
 export default function Accounts() {
   const { user, profile } = useAuth();
-  const canViewAll = ['director', 'manager'].includes(profile?.role);
+  const canViewAll = profile?.role === 'admin';
   const [viewAll, setViewAll] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -964,7 +964,7 @@ export default function Accounts() {
 /* ─────────────────────────────────────────────────────────── */
 function AccountDetail({ account, contacts, onUpdate, navigate }) {
   const { user, profile } = useAuth();
-  const canViewAll = ['director', 'manager'].includes(profile?.role);
+  const canViewAll = profile?.role === 'admin';
   const [data, setData] = useState(account);
   const [qualifying, setQualifying] = useState(null);
   const [myMailboxes, setMyMailboxes] = useState([]);
