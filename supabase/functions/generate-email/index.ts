@@ -320,7 +320,8 @@ Best opening material: (none recorded separately - use known facts above)
       line('Recent signal', fmtSignals(research.ai_signals) || fmtArr(research.signals) || fmtArr(research.aiSignals) || research.recentNews) +
       line('Important to know', fmtNotes(research.important_to_know, 'body')) +
       line('Strategic priorities', fmtNotes(research.strategicPriorities, 'description')) +
-      `Contact: ${contact.full_name}, ${contact.title || 'title unknown'}\n` +
+      `First name (use this exact word in the greeting): ${contact.first_name || 'unknown'}\n` +
+      `Contact: ${[contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.first_name || 'the contact'}, ${contact.title || 'title unknown'}\n` +
       line('Stated pain', research.painPoints)
 
     const ledgerBlock = `========================================
@@ -446,6 +447,12 @@ Hard constraints:
     const writingRulesBlock = `========================================
 WRITING RULES
 ========================================
+GREETING:
+- Start with "Hi " followed by the exact value of "First name" from the FACT
+  LEDGER, then a comma, on its own opening line - e.g. "Hi Priya,". Never
+  "Hi there", never the full name, never the company name, never omit the
+  greeting. If First name is "unknown", open with "Hi," instead (no name).
+
 OPENING LINE:
 - About their world, not yours. Never open with I, We, My name, I hope, or the
   company name.
