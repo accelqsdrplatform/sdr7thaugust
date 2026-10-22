@@ -33,8 +33,10 @@ function contactName(c) {
 }
 
 export default function Contacts() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const canViewAll = profile?.role === 'admin';
+  const [viewAll, setViewAll] = useState(false);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -129,9 +131,9 @@ export default function Contacts() {
     }
   }, [sourceFilter, user.id]);
 
-  useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched]);
+  useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched, viewAll]);
 
-  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched, page]);
+  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched, page, viewAll]);
 
   useEffect(() => {
     const ids = contacts.map(c => c.id);
@@ -159,10 +161,11 @@ export default function Contacts() {
   }
 
   async function fetchFilterOptions() {
-    const { data } = await supabase
+    let foq = supabase
       .from('contacts')
-      .select('account_id, pitch_type, persona, campaign, company, status, source, accounts(industry, country)')
-      .eq('owner_id', user.id);
+      .select('account_id, pitch_type, persona, campaign, company, status, source, accounts(industry, country)');
+    if (!viewAll || !canViewAll) foq = foq.eq('owner_id', user.id);
+    const { data } = await foq;
     const rows = data || [];
     setIndustries([...new Set(rows.map(c => c.accounts?.industry || '').filter(Boolean))].sort());
     setPitchTypes([...new Set(rows.map(c => c.pitch_type).filter(Boolean))].sort());
@@ -181,8 +184,8 @@ export default function Contacts() {
 
     let q = supabase
       .from('contacts')
-      .select('*, accounts(id, name, industry)', { count: 'exact' })
-      .eq('owner_id', user.id);
+      .select('*, accounts(id, name, industry)', { count: 'exact' });
+    if (!viewAll || !canViewAll) q = q.eq('owner_id', user.id);
 
     if (filter !== 'all') q = q.eq('status', filter);
 
@@ -526,7 +529,15 @@ export default function Contacts() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111', margin: 0 }}>My Contacts</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111', margin: 0 }}>{viewAll && canViewAll ? 'All Contacts' : 'My Contacts'}</h1>
+            {canViewAll && (
+              <button onClick={() => setViewAll(v => !v)}
+                style={{ padding: '2px 8px', borderRadius: 20, border: '1px solid #e0e0e0', fontSize: 10, fontWeight: 600, cursor: 'pointer', background: viewAll ? '#111' : '#fff', color: viewAll ? '#fff' : '#555' }}>
+                {viewAll ? 'Team' : 'All'}
+              </button>
+            )}
+          </div>
           <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>
             {activeCount} active · {freshCount} fresh · {bouncedCount} bounced
           </p>
