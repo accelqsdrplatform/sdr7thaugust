@@ -1486,6 +1486,7 @@ function UploadCSV({ userId, onDone }) {
       (existingContacts || []).forEach(ec => {
         matches.push({
           key: 'email:' + ec.email.toLowerCase(),
+          id: ec.id,
           email: ec.email,
           existingName: [ec.first_name, ec.last_name].filter(Boolean).join(' ') || ec.email,
           ownerId: ec.owner_id,
@@ -1512,6 +1513,7 @@ function UploadCSV({ userId, onDone }) {
         if (!wantedKeys.has(fullKey)) return;
         matches.push({
           key: fullKey,
+          id: ec.id,
           email: '',
           existingName: [ec.first_name, ec.last_name].filter(Boolean).join(' ') || ec.company,
           ownerId: ec.owner_id,
@@ -1612,10 +1614,14 @@ function UploadCSV({ userId, onDone }) {
   }
 
   async function confirmDupesAndContinue() {
+    // Checking a duplicate's box means "update that existing contact with
+    // this row's data" rather than creating a second contact — look up the
+    // matched contact's id so runImport can upsert instead of insert for it.
+    const idByDupeKey = Object.fromEntries(dupeMatches.filter(m => m.id).map(m => [m.key, m.id]));
     const rows = parsedRows.filter(r => {
       if (!r._dupeKey) return true;
       return !dupeSkip.has(r._dupeKey);
-    });
+    }).map(r => (r._dupeKey && idByDupeKey[r._dupeKey]) ? { ...r, _updateContactId: idByDupeKey[r._dupeKey] } : r);
     if (rows.length === 0) {
       setMsg('All contacts skipped — nothing to import');
       setStep('idle');
@@ -1639,40 +1645,69 @@ function UploadCSV({ userId, onDone }) {
     const accountMap = {};
     [...existingAccounts, ...createdAccounts].forEach(a => { accountMap[a.name] = a.id; });
 
-    // Strip internal _fields before inserting contacts
-    const contactRows = rows.map(({ _industry, _country, _website, _revenue, _employees, _contact_note, _company_note, _dupeKey, ...rest }) => ({
+    // Strip internal _fields before inserting/updating contacts. Rows the
+    // rep chose to reconcile against an existing contact (in the duplicate
+    // review step) carry _updateContactId — those become an upsert keyed on
+    // id, which updates the existing row instead of creating a new one.
+    const contactRows = rows.map(({ _industry, _country, _website, _revenue, _employees, _contact_note, _company_note, _dupeKey, _updateContactId, ...rest }) => ({
       ...rest,
       account_id: accountMap[rest.company] || null,
       source: 'csv_import',
       import_batch_id: batchId,
+      ...(_updateContactId ? { id: _updateContactId } : {}),
     }));
 
     const contactNotesToInsert = [];
     const companyNotesToInsert = [];
     const companyNotesSeen = new Set();
+    let insertedCount = 0;
+    let updatedCount = 0;
+
+    function collectNotes(id, src) {
+      if (src && src._contact_note) {
+        contactNotesToInsert.push({ contact_id: id, author_id: userId, body: src._contact_note });
+      }
+      if (src && src._company_note && src.company && !companyNotesSeen.has(src.company)) {
+        companyNotesSeen.add(src.company);
+        companyNotesToInsert.push({ company_name: src.company, author_id: userId, body: src._company_note });
+      }
+    }
 
     const BATCH = 50;
     let total = 0;
     for (let i = 0; i < contactRows.length; i += BATCH) {
       const batchRows = rows.slice(i, i + BATCH);
-      const { data: inserted, error } = await supabase.from('contacts').insert(contactRows.slice(i, i + BATCH)).select('id');
-      if (error) { setMsg('Upload failed: ' + error.message); setStep('idle'); return; }
-      if (inserted && inserted.length) {
-        await supabase.from('activity_log').insert(inserted.map(row => ({
-          actor_id: userId, contact_id: row.id, activity_type: 'contact_created',
+      const batchContactRows = contactRows.slice(i, i + BATCH);
+      const toInsert = [], toInsertSrc = [], toUpdate = [], toUpdateSrc = [];
+      batchContactRows.forEach((cr, idx) => {
+        if (cr.id) { toUpdate.push(cr); toUpdateSrc.push(batchRows[idx]); }
+        else { toInsert.push(cr); toInsertSrc.push(batchRows[idx]); }
+      });
+
+      if (toInsert.length) {
+        const { data: inserted, error } = await supabase.from('contacts').insert(toInsert).select('id');
+        if (error) { setMsg('Upload failed: ' + error.message); setStep('idle'); return; }
+        if (inserted && inserted.length) {
+          insertedCount += inserted.length;
+          await supabase.from('activity_log').insert(inserted.map(row => ({
+            actor_id: userId, contact_id: row.id, activity_type: 'contact_created',
+            details: { source: 'csv_import' },
+          })));
+          inserted.forEach((row, idx) => collectNotes(row.id, toInsertSrc[idx]));
+        }
+      }
+
+      if (toUpdate.length) {
+        const { data: updated, error } = await supabase.from('contacts').upsert(toUpdate, { onConflict: 'id' }).select('id');
+        if (error) { setMsg('Upload failed: ' + error.message); setStep('idle'); return; }
+        updatedCount += toUpdate.length;
+        await supabase.from('activity_log').insert(toUpdate.map(row => ({
+          actor_id: userId, contact_id: row.id, activity_type: 'contact_updated',
           details: { source: 'csv_import' },
         })));
-        inserted.forEach((row, idx) => {
-          const src = batchRows[idx];
-          if (src && src._contact_note) {
-            contactNotesToInsert.push({ contact_id: row.id, author_id: userId, body: src._contact_note });
-          }
-          if (src && src._company_note && src.company && !companyNotesSeen.has(src.company)) {
-            companyNotesSeen.add(src.company);
-            companyNotesToInsert.push({ company_name: src.company, author_id: userId, body: src._company_note });
-          }
-        });
+        toUpdate.forEach((row, idx) => collectNotes(row.id, toUpdateSrc[idx]));
       }
+
       total += Math.min(BATCH, contactRows.length - i);
       setMsg(`Uploading… ${total}/${contactRows.length}`);
     }
@@ -1684,7 +1719,7 @@ function UploadCSV({ userId, onDone }) {
     if (companyNotesToInsert.length) await supabase.from('company_notes').insert(companyNotesToInsert);
 
     setStep('done');
-    setMsg(`✓ ${contactRows.length} contacts imported`);
+    setMsg(`✓ ${insertedCount} added${updatedCount ? `, ${updatedCount} updated` : ''}`);
     onDone();
     setTimeout(() => { setMsg(''); setStep('idle'); }, 4000);
   }
@@ -1893,7 +1928,7 @@ function UploadCSV({ userId, onDone }) {
           <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 560, maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
             <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 6px' }}>Possible duplicate contacts</h2>
             <p style={{ fontSize: 13, color: '#666', margin: '0 0 18px' }}>
-              {dupeMatches.length} contact{dupeMatches.length === 1 ? '' : 's'} in this file may already exist in the platform — matched by email where available, or by name + company when no email was given. They're skipped by default — check a box to import it anyway.
+              {dupeMatches.length} contact{dupeMatches.length === 1 ? '' : 's'} in this file may already exist in the platform — matched by email where available, or by name + company when no email was given. They're skipped by default — check a box to update that contact with this file's data instead (pitch type, persona, etc.) rather than creating a duplicate.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
               {dupeMatches.map(m => (
