@@ -65,6 +65,8 @@ export default function ApolloImport() {
   const [mode, setMode] = useState('list');
   const [createListFromImport, setCreateListFromImport] = useState(true);
   const [importListName, setImportListName] = useState('');
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [allLoadProgress, setAllLoadProgress] = useState(0);
   const [filters, setFilters] = useState({
     titles: '', seniorities: [], personLocations: '', orgLocations: '',
     headcounts: [], keywordTags: '', keywords: '', domains: '',
@@ -91,7 +93,7 @@ export default function ApolloImport() {
   async function loadContacts(listId, pageNum = 1) {
     setLoading(true); setError(null);
     try {
-      const data = await callApollo('list_contacts', { list_id: listId, page: pageNum, per_page: 50 });
+      const data = await callApollo('list_contacts', { list_id: listId, page: pageNum, per_page: 100 });
       const fetched = data.contacts || [];
       setContacts(fetched);
       setTotalContacts(data.pagination?.total_entries || fetched.length);
@@ -118,7 +120,7 @@ export default function ApolloImport() {
   }
 
   function buildSearchBody(pageNum) {
-    const body = { page: pageNum, per_page: 50 };
+    const body = { page: pageNum, per_page: 100 };
     if (filters.titles.trim()) body.person_titles = filters.titles.split(',').map(s => s.trim()).filter(Boolean);
     if (filters.seniorities.length) body.person_seniorities = filters.seniorities;
     if (filters.personLocations.trim()) body.person_locations = filters.personLocations.split(',').map(s => s.trim()).filter(Boolean);
@@ -162,6 +164,40 @@ export default function ApolloImport() {
       setStep('preview');
     } catch (e) { setError(e.message); }
     setLoading(false);
+  }
+
+  async function loadAllContacts() {
+    setLoadingAll(true);
+    setError(null);
+    try {
+      const perPage = 100;
+      let already = [...contacts];
+      let pageNum = page + 1;
+      const maxPages = 100; // safety cap (~10,000 contacts)
+      while (already.length < totalContacts && pageNum <= maxPages) {
+        const data = mode === 'search'
+          ? await callApollo('people_search', buildSearchBody(pageNum))
+          : await callApollo('list_contacts', { list_id: selectedList, page: pageNum, per_page: perPage });
+        const fetched = mode === 'search' ? (data.people || []) : (data.contacts || []);
+        if (!fetched.length) break;
+        already = [...already, ...fetched];
+        setAllLoadProgress(already.length);
+        setContacts(already);
+        pageNum++;
+      }
+      setPage(pageNum - 1);
+      setTotalContacts(already.length);
+      const emails = already.filter(c => c.email).map(c => c.email.toLowerCase());
+      if (emails.length > 0) {
+        const { data: existing } = await supabase.from('contacts').select('email').in('email', emails);
+        const existingEmails = new Set((existing || []).map(c => c.email?.toLowerCase()));
+        const dups = already.filter(c => c.email && existingEmails.has(c.email.toLowerCase()));
+        setDuplicates(dups);
+        const def = {}; dups.forEach(d => { def[d.email] = 'skip'; });
+        setDuplicateAction(def);
+      } else { setDuplicates([]); setDuplicateAction({}); }
+    } catch (e) { setError(e.message); }
+    setLoadingAll(false);
   }
 
   async function fetchAccountMaps(assignTo) {
@@ -452,11 +488,15 @@ export default function ApolloImport() {
           <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
             <div style={{ padding: '12px 16px', borderBottom: '0.5px solid #e8e8e4', fontSize: 13, fontWeight: 600, color: '#111', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>Preview — {contacts.length} of {totalContacts} contacts</span>
-              {totalContacts > 50 && (
+              {totalContacts > contacts.length && (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <button disabled={page===1} onClick={()=>mode==='search'?runSearch(page-1):loadContacts(selectedList,page-1)} style={{ padding:'3px 10px',border:'1px solid #e0e0e0',borderRadius:6,fontSize:12,cursor:page===1?'not-allowed':'pointer',opacity:page===1?0.4:1 }}>Prev</button>
+                  <button onClick={loadAllContacts} disabled={loadingAll}
+                    style={{ padding:'4px 12px',border:'1px solid #2563eb',background:'#eff6ff',color:'#2563eb',borderRadius:6,fontSize:12,fontWeight:600,cursor:loadingAll?'not-allowed':'pointer',opacity:loadingAll?0.6:1 }}>
+                    {loadingAll ? ('Loading… (' + allLoadProgress + '/' + totalContacts + ')') : ('Load all ' + totalContacts + ' contacts')}
+                  </button>
+                  <button disabled={page===1||loadingAll} onClick={()=>mode==='search'?runSearch(page-1):loadContacts(selectedList,page-1)} style={{ padding:'3px 10px',border:'1px solid #e0e0e0',borderRadius:6,fontSize:12,cursor:(page===1||loadingAll)?'not-allowed':'pointer',opacity:(page===1||loadingAll)?0.4:1 }}>Prev</button>
                   <span style={{ fontSize: 12, color: '#888' }}>Page {page}</span>
-                  <button disabled={contacts.length<50} onClick={()=>mode==='search'?runSearch(page+1):loadContacts(selectedList,page+1)} style={{ padding:'3px 10px',border:'1px solid #e0e0e0',borderRadius:6,fontSize:12,cursor:contacts.length<50?'not-allowed':'pointer',opacity:contacts.length<50?0.4:1 }}>Next</button>
+                  <button disabled={contacts.length<100||loadingAll} onClick={()=>mode==='search'?runSearch(page+1):loadContacts(selectedList,page+1)} style={{ padding:'3px 10px',border:'1px solid #e0e0e0',borderRadius:6,fontSize:12,cursor:(contacts.length<100||loadingAll)?'not-allowed':'pointer',opacity:(contacts.length<100||loadingAll)?0.4:1 }}>Next</button>
                 </div>
               )}
             </div>
