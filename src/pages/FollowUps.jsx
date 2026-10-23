@@ -418,6 +418,27 @@ export default function FollowUps() {
     fetchData();
   }
 
+  // Lets a rep correct a contact that was mistakenly started on the Templated
+  // track: cancels the active template_assignment (so it stops advancing) and
+  // flips the contact to AI-personalized, picking up from the current stage.
+  async function switchToAI(contact){
+    const ta = templateAssignments[contact.id];
+    const name=((contact.first_name||'')+' '+(contact.last_name||'')).trim()||'this contact';
+    if(!window.confirm(`Switch ${name} from the Templated track to AI-personalized outreach? The templated sequence will stop, and AI-written follow-ups will take over from here.`)) return;
+    setMarkingSent(contact.id);
+    const now = new Date().toISOString();
+    if(ta){
+      await supabase.from('template_assignments').update({status:'cancelled', completed_at:now}).eq('id', ta.id);
+    }
+    await supabase.from('contacts').update({track:'ai', next_followup:now}).eq('id', contact.id);
+    await supabase.from('activity_log').insert({
+      actor_id:user.id, contact_id:contact.id, activity_type:'track_changed',
+      details:{from_track:'templated', to_track:'ai', note:'Switched from Follow-up Queue'},
+    });
+    setMarkingSent(null);
+    fetchData();
+  }
+
   // Bulk actions over the current checkbox selection (toolbar: "Generate
   // Drafts" / "Mark Sent" appear once one or more contacts are selected).
   function selectedContacts(){
@@ -528,7 +549,7 @@ export default function FollowUps() {
     onCopy:id=>copyDraft(id), onView:id=>navigate(`/contacts/${id}`),
     selectedIds, onToggleSelect:toggleSelect,
     customPrompts, onCustomPromptChange:(id,val)=>setCustomPrompts(p=>({...p,[id]:val})),
-    templateAssignments, onMarkSentTemplate:c=>markSentTemplate(c),
+    templateAssignments, onMarkSentTemplate:c=>markSentTemplate(c), onSwitchToAI:c=>switchToAI(c),
   };
   const noResults=filteredFresh.length===0&&filteredActive.length===0;
 
@@ -786,7 +807,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
   contactListMap,lists,sentEmails,strategyOpen,setStrategyOpen,historyOpen,setHistoryOpen,
   onGenerate,onToggleDraft,onRegenerate,onMarkSent,onSnooze,onCopy,onView,isFresh,
   customPrompts,onCustomPromptChange,selectedIds,onToggleSelect,
-  templateAssignments,onMarkSentTemplate}){
+  templateAssignments,onMarkSentTemplate,onSwitchToAI}){
   const customPrompt=customPrompts?.[c.id]||'';
   const sm=STAGE_META[c.status]||{bg:'#f1f5f9',color:'#475569',label:c.status};
   const rm=c.response_type?RESPONSE_META[c.response_type]:null;
@@ -897,6 +918,10 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
                   background:isMarking?'#d1fae5':'#059669',color:'#fff',cursor:isMarking?'wait':'pointer'}}>
                 {isMarking?'Done!':(taCurrentStep>=taTotal?'Send → Complete':'Mark Sent')}
               </button>}
+              <button onClick={()=>onSwitchToAI(c)} title="Switch this contact to AI-personalized outreach"
+                style={{padding:'5px 11px',borderRadius:7,fontSize:11,fontWeight:600,border:'1px solid #c7d2fe',background:'#fff',color:'#4338ca',cursor:'pointer'}}>
+                ↻ Switch to AI
+              </button>
             </>
           ):(
             <>
