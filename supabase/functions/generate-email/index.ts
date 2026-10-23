@@ -494,7 +494,12 @@ LANGUAGE:
   stage spec calls for.
 
 SUBJECT LINE:
-- Under 50 characters. Lowercase-natural, like internal mail.
+- Under 50 characters. Natural, like internal mail -- not a marketing headline.
+- Capitalize the first letter of the subject.
+- Keep product names, platform names and acronyms in their correct case exactly
+  as written elsewhere in this prompt -- never lowercase them. For example:
+  API (not api), SAP (not sap), QA (not qa), ACCELQ (not accelq), ServiceNow,
+  Salesforce, nCino. The rest of the subject can stay in natural sentence case.
 - No ALL CAPS, no spam words, no colon used as a marketing device.
 `
 
@@ -582,13 +587,34 @@ Return ONLY valid JSON:
       .replace(/  +/g, ' ')
       .trim()
 
+    // Keywords whose casing must stay fixed no matter how the model wrote them --
+    // applied word-by-word so 'api' -> 'API', 'sap' -> 'SAP', etc. in subject lines.
+    const KEYWORD_CASING: Record<string, string> = {
+      api: 'API', sap: 'SAP', qa: 'QA', crm: 'CRM', erp: 'ERP', roi: 'ROI',
+      ai: 'AI', ml: 'ML', sso: 'SSO', saas: 'SaaS', ui: 'UI', ux: 'UX',
+      ci: 'CI', cd: 'CD', poc: 'POC', rfp: 'RFP', kpi: 'KPI', sdr: 'SDR',
+      url: 'URL',
+      salesforce: 'Salesforce', oracle: 'Oracle', servicenow: 'ServiceNow',
+      workday: 'Workday', pega: 'Pega', ncino: 'nCino', coupa: 'Coupa',
+      accelq: 'ACCELQ',
+    }
+    const fixKeywordCasing = (s: string) => (s || '').replace(/[A-Za-z]+/g, (word) => {
+      const fixed = KEYWORD_CASING[word.toLowerCase()]
+      return fixed || word
+    })
+    const capitalizeFirst = (s: string) => {
+      const t = (s || '').trim()
+      return t ? t.charAt(0).toUpperCase() + t.slice(1) : t
+    }
+    const cleanSubject = (s: string) => capitalizeFirst(fixKeywordCasing(clean(s)))
+
     const stripSignoff = (s: string) => s
       .replace(/\n{1,2}(thanks|best|regards|best regards|warm regards|cheers|sincerely)[,!.]?\s*\n[^\n]{0,60}$/i, '')
       .replace(/\n{1,2}(thanks|best|regards|best regards|warm regards|cheers|sincerely)[,!.]?\s*$/i, '')
       .trim()
 
     return new Response(JSON.stringify({
-      subject: clean(parsed.subject),
+      subject: cleanSubject(parsed.subject),
       body: stripSignoff(clean(parsed.body)),
       hook_used: parsed.hook_used || null,
       facts_asserted: Array.isArray(parsed.facts_asserted) ? parsed.facts_asserted : [],
