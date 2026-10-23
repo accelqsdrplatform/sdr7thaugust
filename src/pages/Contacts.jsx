@@ -708,7 +708,7 @@ export default function Contacts() {
           )}
         </button>
         {activeFilters > 0 && (
-          <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setHeadcountFilter(''); setFreshCountFilter(''); setAcctLastTouchFrom(''); setAcctLastTouchTo(''); setAcctNeverTouched(false); setListContactIds(new Set()); }}
+          <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setCampaignFilter(''); setSourceFilter(''); setCountryFilter(''); setBatchFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setHeadcountFilter(''); setFreshCountFilter(''); setAcctLastTouchFrom(''); setAcctLastTouchTo(''); setAcctNeverTouched(false); setListContactIds(new Set()); }}
             style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
             Clear filters ({activeFilters})
           </button>
@@ -909,7 +909,7 @@ export default function Contacts() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid #eee' }}>
               {activeFilters > 0 && (
-                <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setHeadcountFilter(''); setFreshCountFilter(''); setAcctLastTouchFrom(''); setAcctLastTouchTo(''); setAcctNeverTouched(false); setListContactIds(new Set()); }}
+                <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setCampaignFilter(''); setSourceFilter(''); setCountryFilter(''); setBatchFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setHeadcountFilter(''); setFreshCountFilter(''); setAcctLastTouchFrom(''); setAcctLastTouchTo(''); setAcctNeverTouched(false); setListContactIds(new Set()); }}
                   style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
                   Clear filters ({activeFilters})
                 </button>
