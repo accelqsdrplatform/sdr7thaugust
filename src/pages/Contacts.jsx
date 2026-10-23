@@ -90,6 +90,8 @@ export default function Contacts() {
   const [dupeKeep, setDupeKeep]               = useState({}); // { email: contactId }
   const [dupeMerging, setDupeMerging]         = useState(false);
   const [companyFilter, setCompanyFilter]     = useState('');
+  const [acctFilter, setAcctFilter]           = useState('');
+  const [acctOptions, setAcctOptions]         = useState([]);
   const [responseFilter, setResponseFilter]   = useState('');
   const [sourceFilter, setSourceFilter]       = useState('');
   const [jobChangeFilter, setJobChangeFilter] = useState('');
@@ -118,7 +120,7 @@ export default function Contacts() {
     return () => clearTimeout(t);
   }, [search]);
 
-  useEffect(() => { fetchLists(); }, []);
+  useEffect(() => { fetchLists(); fetchAcctOptions(); }, []);
 
   useEffect(() => { loadMailboxes(); }, []);
 
@@ -131,9 +133,9 @@ export default function Contacts() {
     }
   }, [sourceFilter, user.id]);
 
-  useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched, viewAll]);
+  useEffect(() => { setPage(1); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, listFilter, hasEmailFilter, companyFilter, acctFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched, viewAll]);
 
-  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched, page, viewAll]);
+  useEffect(() => { fetchContacts(); }, [filter, debouncedSearch, industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, acctFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched, page, viewAll]);
 
   useEffect(() => {
     const ids = contacts.map(c => c.id);
@@ -253,6 +255,8 @@ export default function Contacts() {
       q = q.in('id', ids);
     }
 
+    if (acctFilter) q = q.eq('account_id', acctFilter);
+
     if (dateAddedFilter) {
       if (dateAddedFilter === '7d')     q = q.gte('created_at', dayStart(7).toISOString());
       if (dateAddedFilter === '30d')    q = q.gte('created_at', dayStart(30).toISOString());
@@ -292,6 +296,11 @@ export default function Contacts() {
   async function fetchLists() {
     const { data } = await supabase.from('lists').select('id, name').eq('owner_id', user.id).order('name');
     setLists(data || []);
+  }
+
+  async function fetchAcctOptions() {
+    const { data } = await supabase.from('accounts').select('id, name').eq('owner_id', user.id).order('name');
+    setAcctOptions(data || []);
   }
 
   async function findDuplicates() {
@@ -493,7 +502,7 @@ export default function Contacts() {
   // Effective industry: contact's own industry OR inherited from account
   function effectiveIndustry(c) { return c.accounts?.industry || ''; }
 
-  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched].filter(Boolean).length;
+  const activeFilters = [industryFilter, pitchTypeFilter, personaFilter, campaignFilter, listFilter, hasEmailFilter, companyFilter, acctFilter, responseFilter, sourceFilter, countryFilter, batchFilter, dateAddedFilter, lastReachedFilter, dateAddedFrom, dateAddedTo, lastReachedFrom, lastReachedTo, jobChangeFilter, headcountFilter, freshCountFilter, acctLastTouchFrom, acctLastTouchTo, acctNeverTouched].filter(Boolean).length;
 
   const freshSelected = [...selected].filter(id => {
     const c = contacts.find(x => x.id === id);
@@ -708,7 +717,7 @@ export default function Contacts() {
           )}
         </button>
         {activeFilters > 0 && (
-          <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setCampaignFilter(''); setSourceFilter(''); setCountryFilter(''); setBatchFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setHeadcountFilter(''); setFreshCountFilter(''); setAcctLastTouchFrom(''); setAcctLastTouchTo(''); setAcctNeverTouched(false); setListContactIds(new Set()); }}
+          <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setCampaignFilter(''); setSourceFilter(''); setCountryFilter(''); setBatchFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setAcctFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setHeadcountFilter(''); setFreshCountFilter(''); setAcctLastTouchFrom(''); setAcctLastTouchTo(''); setAcctNeverTouched(false); setListContactIds(new Set()); }}
             style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
             Clear filters ({activeFilters})
           </button>
@@ -767,6 +776,13 @@ export default function Contacts() {
             style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (listFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: listFilter ? '#eff6ff' : '#fff', color: listFilter ? '#1d4ed8' : '#555' }}>
             <option value="">All Lists</option>
             {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+        )}
+        {matchesFilterSearch('Account') && acctOptions.length > 0 && (
+          <select value={acctFilter} onChange={e => setAcctFilter(e.target.value)}
+            style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (acctFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: acctFilter ? '#eff6ff' : '#fff', color: acctFilter ? '#1d4ed8' : '#555' }}>
+            <option value="">All Accounts</option>
+            {acctOptions.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         )}
         <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '2px 0 6px' }}>Engagement</div>
@@ -909,7 +925,7 @@ export default function Contacts() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid #eee' }}>
               {activeFilters > 0 && (
-                <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setCampaignFilter(''); setSourceFilter(''); setCountryFilter(''); setBatchFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setHeadcountFilter(''); setFreshCountFilter(''); setAcctLastTouchFrom(''); setAcctLastTouchTo(''); setAcctNeverTouched(false); setListContactIds(new Set()); }}
+                <button onClick={() => { setIndustryFilter(''); setPitchTypeFilter(''); setPersonaFilter(''); setCampaignFilter(''); setSourceFilter(''); setCountryFilter(''); setBatchFilter(''); setListFilter(''); setHasEmailFilter(''); setCompanyFilter(''); setAcctFilter(''); setResponseFilter(''); setDateAddedFilter(''); setLastReachedFilter(''); setDateAddedFrom(''); setDateAddedTo(''); setLastReachedFrom(''); setLastReachedTo(''); setJobChangeFilter(''); setHeadcountFilter(''); setFreshCountFilter(''); setAcctLastTouchFrom(''); setAcctLastTouchTo(''); setAcctNeverTouched(false); setListContactIds(new Set()); }}
                   style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
                   Clear filters ({activeFilters})
                 </button>
