@@ -1226,6 +1226,8 @@ function UploadCSV({ userId, onDone }) {
   const [msg, setMsg]            = useState('');
   const [csvHeaders, setCsvHeaders]   = useState([]); // raw header strings
   const [csvFileName, setCsvFileName] = useState('');
+  const [createListFromImport, setCreateListFromImport] = useState(true);
+  const [importListName, setImportListName] = useState('');
   const [csvDataRows, setCsvDataRows] = useState([]); // array of arrays (raw string values)
   const [mapping, setMapping]         = useState({}); // { headerIndex: fieldKey }
   const [parsedRows, setParsedRows]    = useState([]);
@@ -1683,6 +1685,7 @@ function UploadCSV({ userId, onDone }) {
     const companyNotesSeen = new Set();
     let insertedCount = 0;
     let updatedCount = 0;
+    const importedContactIds = [];
 
     function collectNotes(id, src) {
       if (src && src._contact_note) {
@@ -1710,6 +1713,7 @@ function UploadCSV({ userId, onDone }) {
         if (error) { setMsg('Upload failed: ' + error.message); setStep('idle'); return; }
         if (inserted && inserted.length) {
           insertedCount += inserted.length;
+          inserted.forEach(row => importedContactIds.push(row.id));
           await supabase.from('activity_log').insert(inserted.map(row => ({
             actor_id: userId, contact_id: row.id, activity_type: 'contact_created',
             details: { source: 'csv_import' },
@@ -1722,6 +1726,7 @@ function UploadCSV({ userId, onDone }) {
         const { data: updated, error } = await supabase.from('contacts').upsert(toUpdate, { onConflict: 'id' }).select('id');
         if (error) { setMsg('Upload failed: ' + error.message); setStep('idle'); return; }
         updatedCount += toUpdate.length;
+        toUpdate.forEach(row => importedContactIds.push(row.id));
         await supabase.from('activity_log').insert(toUpdate.map(row => ({
           actor_id: userId, contact_id: row.id, activity_type: 'contact_updated',
           details: { source: 'csv_import' },
@@ -1739,8 +1744,21 @@ function UploadCSV({ userId, onDone }) {
     if (contactNotesToInsert.length) await supabase.from('contact_notes').insert(contactNotesToInsert);
     if (companyNotesToInsert.length) await supabase.from('company_notes').insert(companyNotesToInsert);
 
+    let createdListName = null;
+    if (createListFromImport && importedContactIds.length > 0) {
+      const finalName = importListName.trim() || ('CSV Import ' + new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
+      const { data: newList } = await supabase.from('lists').insert({ name: finalName, owner_id: userId }).select('id, name').single();
+      if (newList && newList.id) {
+        createdListName = newList.name;
+        await supabase.from('contact_lists').upsert(
+          importedContactIds.map(id => ({ contact_id: id, list_id: newList.id, added_date: new Date().toISOString() })),
+          { onConflict: 'contact_id,list_id' }
+        );
+      }
+    }
+
     setStep('done');
-    setMsg(`✓ ${insertedCount} added${updatedCount ? `, ${updatedCount} updated` : ''}`);
+    setMsg(`✓ ${insertedCount} added${updatedCount ? `, ${updatedCount} updated` : ''}${createdListName ? ` — added to list "${createdListName}"` : ''}`);
     onDone();
     setTimeout(() => { setMsg(''); setStep('idle'); }, 4000);
   }
@@ -1876,6 +1894,15 @@ function UploadCSV({ userId, onDone }) {
               })}
             </div>
 
+            <label style={{ display:'flex',alignItems:'center',gap:10,cursor:'pointer',fontSize:13,marginBottom:8 }}>
+              <input type="checkbox" checked={createListFromImport} onChange={e=>setCreateListFromImport(e.target.checked)} style={{ width:15,height:15,cursor:'pointer' }} />
+              <span><strong>Create a list from this import</strong><span style={{ color:'#999',marginLeft:6 }}>— groups these contacts so you can export or start outreach on them as a batch</span></span>
+            </label>
+            {createListFromImport && (
+              <input value={importListName} onChange={e=>setImportListName(e.target.value)}
+                placeholder={csvFileName ? csvFileName.replace(/\.csv$/i, '') : ('CSV Import ' + new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}))}
+                style={{ marginBottom: 16, width:'100%', padding:'7px 10px', border:'1px solid #e0e0e0', borderRadius:7, fontSize:13, outline:'none', boxSizing:'border-box' }} />
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: '#999' }}>{mappedFieldCount} of {csvHeaders.length} columns mapped</span>
               <div style={{ display: 'flex', gap: 8 }}>
