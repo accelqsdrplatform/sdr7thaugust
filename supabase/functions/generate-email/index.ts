@@ -214,6 +214,21 @@ function findIndustryStake(industry: string | undefined): string | null {
 // Small formatting helpers
 // ============================================================
 const fmtArr = (a: any) => Array.isArray(a) && a.length > 0 ? a.join(', ') : null
+
+// Best-effort first name guessed from the local part of an email address
+// (e.g. priya.sharma@acme.com -> Priya), used only as a last resort when the
+// contact has no first_name and no parseable full_name, so the greeting
+// always has something to address the person by.
+function deriveNameFromEmail(email: string | null | undefined): string | null {
+  if (!email) return null
+  const local = email.split('@')[0] || ''
+  const cleaned = local.replace(/[0-9]+/g, '')
+  const parts = cleaned.split(/[._+-]+/).filter(Boolean)
+  if (!parts.length) return null
+  const raw = parts[0]
+  if (raw.length < 2) return null
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()
+}
 const fmtObj = (a: any) => {
   if (!a) return null
   if (Array.isArray(a)) return a.length > 0 ? a.map((x: any) => typeof x === 'object' ? JSON.stringify(x) : x).join(', ') : null
@@ -308,6 +323,12 @@ Best opening material: (none recorded separately - use known facts above)
 
     // ---- 3. Fact ledger ----
     const industry = contact.industry || research.detectedIndustry
+    // Always have something to greet the contact by: prefer their real first_name,
+    // then fall back to splitting a combined full_name, then to a name guessed from
+    // their email address -- in that order of confidence.
+    const derivedFirstName = contact.first_name ||
+      (contact.full_name ? contact.full_name.trim().split(/\s+/)[0] : null) ||
+      deriveNameFromEmail(contact.email)
     const ledgerLines =
       line('Company', contact.company) +
       line('Industry', industry) +
@@ -320,8 +341,8 @@ Best opening material: (none recorded separately - use known facts above)
       line('Recent signal', fmtSignals(research.ai_signals) || fmtArr(research.signals) || fmtArr(research.aiSignals) || research.recentNews) +
       line('Important to know', fmtNotes(research.important_to_know, 'body')) +
       line('Strategic priorities', fmtNotes(research.strategicPriorities, 'description')) +
-      `First name (use this exact word in the greeting): ${contact.first_name || 'unknown'}\n` +
-      `Contact: ${[contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.first_name || 'the contact'}, ${contact.title || 'title unknown'}\n` +
+      `First name (use this exact word in the greeting): ${derivedFirstName || 'unknown'}\n` +
+      `Contact: ${[contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.full_name || derivedFirstName || 'the contact'}, ${contact.title || 'title unknown'}\n` +
       line('Stated pain', research.painPoints)
 
     const ledgerBlock = `========================================
