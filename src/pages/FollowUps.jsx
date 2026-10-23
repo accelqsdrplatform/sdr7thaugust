@@ -872,7 +872,13 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
         </div>
         {isTemplated?(
           <>
-            <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:6,background:'#ede9fe',color:'#6d28d9',flexShrink:0,whiteSpace:'nowrap'}}>Templated</span>
+            <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:6,background:'#ede9fe',color:'#6d28d9',flexShrink:0,whiteSpace:'nowrap',display:'inline-flex',alignItems:'center',gap:4}}>
+              Templated
+              <button onClick={e=>{e.stopPropagation();onSwitchToAI(c);}} title="Switch to AI-personalized outreach"
+                style={{fontSize:9,fontWeight:700,padding:'1px 4px',borderRadius:4,border:'1px solid #c4b5fd',background:'#fff',color:'#6d28d9',cursor:'pointer',lineHeight:1.4}}>
+                ↻ AI
+              </button>
+            </span>
             <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:6,background:taComplete?'#dcfce7':'#f1f5f9',color:taComplete?'#15803d':'#475569',flexShrink:0,whiteSpace:'nowrap'}}>{taComplete?'Sequence Complete':`Step ${taCurrentStep} of ${taTotal}`}</span>
           </>
         ):(
@@ -918,10 +924,6 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
                   background:isMarking?'#d1fae5':'#059669',color:'#fff',cursor:isMarking?'wait':'pointer'}}>
                 {isMarking?'Done!':(taCurrentStep>=taTotal?'Send → Complete':'Mark Sent')}
               </button>}
-              <button onClick={()=>onSwitchToAI(c)} title="Switch this contact to AI-personalized outreach"
-                style={{padding:'5px 11px',borderRadius:7,fontSize:11,fontWeight:600,border:'1px solid #c7d2fe',background:'#fff',color:'#4338ca',cursor:'pointer'}}>
-                ↻ Switch to AI
-              </button>
             </>
           ):(
             <>
