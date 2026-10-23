@@ -332,6 +332,11 @@ export default function ApolloImport() {
 
   const dupEmails = new Set(duplicates.map(d => d.email));
   const toImportCount = contacts.filter(c => !dupEmails.has(c.email) || duplicateAction[c.email] === 'overwrite').length;
+  const alreadyImportedCount = duplicates.filter(d => (duplicateAction[d.email] || 'skip') === 'skip').length;
+  const visibleContacts = contacts.filter(c => {
+    const isDup = c.email && dupEmails.has(c.email);
+    return !isDup || duplicateAction[c.email] === 'overwrite';
+  });
 
   return (
     <div style={{ padding: 24, maxWidth: 900 }}>
@@ -487,7 +492,7 @@ export default function ApolloImport() {
           )}
           <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
             <div style={{ padding: '12px 16px', borderBottom: '0.5px solid #e8e8e4', fontSize: 13, fontWeight: 600, color: '#111', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Preview — {contacts.length} of {totalContacts} contacts</span>
+              <span>Preview — {visibleContacts.length} new of {totalContacts} total{alreadyImportedCount > 0 ? (' (' + alreadyImportedCount + ' already imported, hidden)') : ''}</span>
               {totalContacts > contacts.length && (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <button onClick={loadAllContacts} disabled={loadingAll}
@@ -503,7 +508,10 @@ export default function ApolloImport() {
             <table style={{ width:'100%',borderCollapse:'collapse',fontSize:13 }}>
               <thead><tr style={{ background:'#f9f9f7' }}>{['Name','Title','Company','Email','Status'].map(h=><th key={h} style={{ padding:'8px 12px',textAlign:'left',fontSize:11,color:'#999',fontWeight:500,borderBottom:'0.5px solid #e8e8e4' }}>{h}</th>)}</tr></thead>
               <tbody>
-                {contacts.map((c,i)=>{
+                {visibleContacts.length === 0 && (
+                  <tr><td colSpan={5} style={{ padding:'20px 12px', textAlign:'center', color:'#aaa', fontSize:13 }}>All contacts on this page have already been imported.</td></tr>
+                )}
+                {visibleContacts.map((c,i)=>{
                   const isDup=c.email&&dupEmails.has(c.email);
                   const action=isDup?duplicateAction[c.email]:null;
                   return (<tr key={i} style={{ borderBottom:'0.5px solid #f5f5f3',opacity:action==='skip'?0.45:1 }}>
