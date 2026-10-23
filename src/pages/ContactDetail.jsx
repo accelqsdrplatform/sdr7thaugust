@@ -519,12 +519,46 @@ export default function ContactDetail() {
       {tab === 'overview' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <InfoCard title="Contact info">
-            <InfoRow label="Full name" value={contactName} />
-            <InfoRow label="Title" value={contact.title} />
-            <InfoRow label="Company" value={contact.company} />
+            <InfoRow label="Full name" value={contactName} editable placeholder="First Last"
+              onSave={async (newName) => {
+                const parts = newName.trim().split(/\s+/).filter(Boolean);
+                const first_name = parts[0] || '';
+                const last_name = parts.slice(1).join(' ') || '';
+                const { error } = await supabase.from('contacts').update({ first_name, last_name }).eq('id', id);
+                if (error) { toast.error('Could not save name: ' + error.message); return; }
+                await supabase.from('activity_log').insert({
+                  actor_id: user.id, contact_id: id, activity_type: 'contact_info_updated',
+                  details: { field: 'full_name', new_value: newName || null },
+                });
+                setContact(c => ({ ...c, first_name, last_name }));
+                fetchTimeline();
+              }} />
+            <InfoRow label="Title" value={contact.title} editable placeholder="Job title"
+              onSave={async (newTitle) => {
+                const { error } = await supabase.from('contacts').update({ title: newTitle || null }).eq('id', id);
+                if (error) { toast.error('Could not save title: ' + error.message); return; }
+                await supabase.from('activity_log').insert({
+                  actor_id: user.id, contact_id: id, activity_type: 'contact_info_updated',
+                  details: { field: 'title', new_value: newTitle || null },
+                });
+                setContact(c => ({ ...c, title: newTitle || null }));
+                fetchTimeline();
+              }} />
+            <InfoRow label="Company" value={contact.company} editable placeholder="Company name"
+              onSave={async (newCompany) => {
+                const { error } = await supabase.from('contacts').update({ company: newCompany || null }).eq('id', id);
+                if (error) { toast.error('Could not save company: ' + error.message); return; }
+                await supabase.from('activity_log').insert({
+                  actor_id: user.id, contact_id: id, activity_type: 'contact_info_updated',
+                  details: { field: 'company', new_value: newCompany || null },
+                });
+                setContact(c => ({ ...c, company: newCompany || null }));
+                fetchTimeline();
+              }} />
             <InfoRow label="Email" value={contact.email} editable placeholder="name@company.com"
               onSave={async (newEmail) => {
-                await supabase.from('contacts').update({ email: newEmail || null }).eq('id', id);
+                const { error } = await supabase.from('contacts').update({ email: newEmail || null }).eq('id', id);
+                if (error) { toast.error('Could not save email: ' + error.message); return; }
                 await supabase.from('activity_log').insert({
                   actor_id: user.id, contact_id: id, activity_type: 'contact_info_updated',
                   details: { field: 'email', new_value: newEmail || null },
@@ -536,7 +570,17 @@ export default function ContactDetail() {
             <InfoRow label="Location" value={contact.location} />
             <InfoRow label="Industry" value={contact.industry} />
             <InfoRow label="Country" value={contact.country} />
-            <InfoRow label="LinkedIn" value={contact.linkedin_url} isLink />
+            <InfoRow label="LinkedIn" value={contact.linkedin_url} isLink editable placeholder="https://linkedin.com/in/..."
+              onSave={async (newUrl) => {
+                const { error } = await supabase.from('contacts').update({ linkedin_url: newUrl || null }).eq('id', id);
+                if (error) { toast.error('Could not save LinkedIn URL: ' + error.message); return; }
+                await supabase.from('activity_log').insert({
+                  actor_id: user.id, contact_id: id, activity_type: 'contact_info_updated',
+                  details: { field: 'linkedin_url', new_value: newUrl || null },
+                });
+                setContact(c => ({ ...c, linkedin_url: newUrl || null }));
+                fetchTimeline();
+              }} />
           </InfoCard>
           <InfoCard title="Outreach status">
             <InfoRow label="Stage" value={contact.status} />
