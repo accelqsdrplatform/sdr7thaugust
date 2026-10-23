@@ -227,6 +227,13 @@ export default function Lists() {
     const withEmail = allContacts.filter(c => c.email);
 
     if (withEmail.length > 0) {
+      // Preserve an existing contact's current owner on conflict; only new contacts
+      // get owner_id set to the importing user. Without owner_id, newly-created rows
+      // are invisible under owner-scoped views (the "My" filter elsewhere in this app).
+      const apolloEmails = withEmail.map(c => c.email);
+      const { data: existingApollo } = await supabase.from('contacts').select('email, owner_id').in('email', apolloEmails);
+      const ownerByEmail = {};
+      (existingApollo || []).forEach(e => { ownerByEmail[e.email] = e.owner_id; });
       await supabase.from('contacts').upsert(
         withEmail.map(c => ({
           first_name: c.first_name || '',
@@ -236,6 +243,7 @@ export default function Lists() {
           title: c.title || '',
           linkedin_url: c.linkedin_url || null,
           status: 'Fresh',
+          owner_id: ownerByEmail[c.email] || user.id,
         })),
         { onConflict: 'email', ignoreDuplicates: false }
       );
@@ -385,7 +393,7 @@ export default function Lists() {
       // because this CSV row left that column empty -- only fill in what the row
       // actually supplies, and keep whatever was already on file otherwise.
       const emails = parsedRows.map(c => c.email);
-      const { data: existing } = await supabase.from('contacts').select('email, first_name, last_name, company, title').in('email', emails);
+      const { data: existing } = await supabase.from('contacts').select('email, first_name, last_name, company, title, owner_id').in('email', emails);
       const byEmail = {};
       (existing || []).forEach(e => { byEmail[e.email] = e; });
       const contacts = parsedRows.map(c => {
@@ -397,6 +405,10 @@ export default function Lists() {
           company: c.company || prior?.company || '',
           title: c.title || prior?.title || '',
           status: 'Fresh',
+          // Keep an existing contact's current owner; only newly-created contacts are
+          // owned by the user doing this import (owner_id is required for the row to
+          // show up under owner-scoped views elsewhere in the app).
+          owner_id: prior?.owner_id || user.id,
         };
       });
       await supabase.from('contacts').upsert(contacts, { onConflict: 'email', ignoreDuplicates: false });
