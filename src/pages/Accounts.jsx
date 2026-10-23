@@ -219,9 +219,11 @@ export default function Accounts() {
   const [acctStateFilter, setAcctStateFilter] = useState('');
   const [acctHqOptions, setAcctHqOptions] = useState([]);
   const [acctStateOptions, setAcctStateOptions] = useState([]);
+  const [acctListFilter, setAcctListFilter] = useState('');
+  const [acctListOptions, setAcctListOptions] = useState([]);
   const activeAcctFilterCount = (filterBy !== 'all' ? 1 : 0) + (acctIndustryFilter ? 1 : 0) + (acctHeadcountFilter ? 1 : 0)
     + (acctNeverTouched || acctLastTouchedFrom || acctLastTouchedTo ? 1 : 0) + (acctFreshCountFilter ? 1 : 0)
-    + (acctHqFilter ? 1 : 0) + (acctStateFilter ? 1 : 0);
+    + (acctHqFilter ? 1 : 0) + (acctStateFilter ? 1 : 0) + (acctListFilter ? 1 : 0);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
   const [totalCount, setTotalCount] = useState(0);
@@ -268,6 +270,15 @@ export default function Accounts() {
     // so we never pull the whole accounts or contacts table into the browser.
     let q = supabase.from('accounts_with_stats').select('*', { count: 'exact' });
     if (accountIdsScope) q = q.in('id', accountIdsScope);
+
+    // List filter: narrow to accounts that have at least one contact in the
+    // selected list (lists are contact-level, so this derives the account set
+    // from contact_lists -> contacts.account_id rather than filtering accounts directly).
+    if (acctListFilter) {
+      const { data: listRows } = await supabase.from('contact_lists').select('contacts(account_id)').eq('list_id', acctListFilter);
+      const listAccountIds = [...new Set((listRows || []).map(r => r.contacts && r.contacts.account_id).filter(Boolean))];
+      q = q.in('id', listAccountIds.length ? listAccountIds : ['00000000-0000-0000-0000-000000000000']);
+    }
 
     if (filterBy === 'legacy') q = q.eq('has_legacy_tool', true);
     if (filterBy === 'hiring') q = q.eq('is_hiring_qa', true);
@@ -332,10 +343,10 @@ export default function Accounts() {
       setContactsByAccount({});
     }
     setLoading(false);
-  }, [user.id, canViewAll, viewAll, filterBy, search, sortBy, page, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctHqFilter, acctStateFilter]);
+  }, [user.id, canViewAll, viewAll, filterBy, search, sortBy, page, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctHqFilter, acctStateFilter, acctListFilter]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-  useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctHqFilter, acctStateFilter]);
+  useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctHqFilter, acctStateFilter, acctListFilter]);
 
   // Accounts-by-size rollup for the right-panel summary. Mirrors fetchAll's
   // scoping/filters so it reflects the same book, but deliberately omits the
@@ -355,9 +366,16 @@ export default function Accounts() {
       }
     }
 
+    let sizeBandListAccountIds = [];
+    if (acctListFilter) {
+      const { data: listRows } = await supabase.from('contact_lists').select('contacts(account_id)').eq('list_id', acctListFilter);
+      sizeBandListAccountIds = [...new Set((listRows || []).map(r => r.contacts && r.contacts.account_id).filter(Boolean))];
+    }
+
     function baseQuery() {
       let q = supabase.from('accounts_with_stats').select('*', { count: 'exact', head: true });
       if (accountIdsScope) q = q.in('id', accountIdsScope);
+      if (acctListFilter) q = q.in('id', sizeBandListAccountIds.length ? sizeBandListAccountIds : ['00000000-0000-0000-0000-000000000000']);
       if (filterBy === 'legacy') q = q.eq('has_legacy_tool', true);
       if (filterBy === 'hiring') q = q.eq('is_hiring_qa', true);
       if (filterBy === 'funded') q = q.eq('is_funded', true);
@@ -394,7 +412,7 @@ export default function Accounts() {
         .concat([{ key: 'unparsed', label: 'Unparsed / unknown', count: unparsedResult.count || 0 }])
     );
     setSizeBandLoading(false);
-  }, [user.id, canViewAll, viewAll, filterBy, acctIndustryFilter, acctNeverTouched, acctLastTouchedFrom, acctLastTouchedTo, acctFreshCountFilter, search, acctHqFilter, acctStateFilter]);
+  }, [user.id, canViewAll, viewAll, filterBy, acctIndustryFilter, acctNeverTouched, acctLastTouchedFrom, acctLastTouchedTo, acctFreshCountFilter, search, acctHqFilter, acctStateFilter, acctListFilter]);
 
   useEffect(() => { fetchSizeBands(); }, [fetchSizeBands]);
 
@@ -418,6 +436,12 @@ export default function Accounts() {
         setAcctStateOptions(uniq);
       });
   }, []);
+
+  useEffect(() => {
+    let q = supabase.from('lists').select('id, name').order('name');
+    if (!viewAll || !canViewAll) q = q.eq('owner_id', user.id);
+    q.then(({ data }) => setAcctListOptions(data || []));
+  }, [viewAll, canViewAll, user.id]);
 
   async function runAccountHygiene() {
     setHygieneOpen(true);
@@ -848,6 +872,13 @@ export default function Accounts() {
                     style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (acctStateFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: acctStateFilter ? '#eff6ff' : '#fff', color: acctStateFilter ? '#1d4ed8' : '#555' }}>
                     <option value="">State/Region: All</option>
                     {acctStateOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                )}
+                {matchesAcctFilterSearch('List') && acctListOptions.length > 0 && (
+                  <select value={acctListFilter} onChange={e => setAcctListFilter(e.target.value)}
+                    style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (acctListFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: acctListFilter ? '#eff6ff' : '#fff', color: acctListFilter ? '#1d4ed8' : '#555' }}>
+                    <option value="">List: All</option>
+                    {acctListOptions.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 )}
                 {matchesAcctFilterSearch('Headcount') && (
