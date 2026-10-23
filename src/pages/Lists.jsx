@@ -98,6 +98,26 @@ export default function Lists() {
   const [csvResult, setCsvResult] = useState(null);
   const csvInputRef = useRef(null);
 
+  // Export CSV
+  const [exporting, setExporting] = useState(null);
+
+  // Bulk outreach
+  const [outreachTarget, setOutreachTarget] = useState(null);
+  const [outreachTrack, setOutreachTrack] = useState('ai');
+  const [outreachTemplateId, setOutreachTemplateId] = useState('');
+  const [outreachTemplates, setOutreachTemplates] = useState([]);
+  const [outreachMailboxes, setOutreachMailboxes] = useState([]);
+  const [outreachMailboxId, setOutreachMailboxId] = useState('');
+  const [outreachLoading, setOutreachLoading] = useState(false);
+  const [outreachRunning, setOutreachRunning] = useState(false);
+  const [outreachResult, setOutreachResult] = useState(null);
+
+  // Find & merge duplicates
+  const [dupTarget, setDupTarget] = useState(null);
+  const [dupGroups, setDupGroups] = useState([]);
+  const [dupLoading, setDupLoading] = useState(false);
+  const [dupMerging, setDupMerging] = useState(null);
+
   useEffect(() => { fetchLists(); }, [viewAll]);
 
   async function fetchLists() {
@@ -353,6 +373,174 @@ export default function Lists() {
     setCsvResult({ total: csvParsed.length, withEmail: contacts.length, added });
     setCsvImporting(false);
     fetchListContacts(csvTarget.id);
+  }
+
+  // ── Export list to CSV ──────────────────────────────────────────────────
+
+  function csvField(v) {
+    v = (v == null ? '' : String(v));
+    const bad = /["\n,\r]/.test(v);
+    if (!bad) return v;
+    return '"' + v.replace(/"/g, '""') + '"';
+  }
+
+  async function ensureListContacts(listId) {
+    const existing = listContacts[listId];
+    if (existing) return existing;
+    const { data: cls } = await supabase
+      .from('contact_lists')
+      .select('*, contacts(*)')
+      .eq('list_id', listId)
+      .order('added_date', { ascending: false });
+    const rows = (cls || []).map(cl => ({ cl, contact: cl.contacts }));
+    setListContacts(prev => ({ ...prev, [listId]: rows }));
+    return rows;
+  }
+
+  async function exportListCSV(list) {
+    setExporting(list.id);
+    const rows = await ensureListContacts(list.id);
+    const COLUMNS = ['First Name', 'Last Name', 'Email', 'Title', 'Company', 'Status', 'Track', 'LinkedIn', 'Added to List', 'Last Touchpoint', 'Active Campaign'];
+    const lines = [COLUMNS.join(',')];
+    rows.forEach(({ cl, contact: c }) => {
+      if (!c) return;
+      lines.push([
+        csvField(c.first_name), csvField(c.last_name), csvField(c.email), csvField(c.title),
+        csvField(c.company), csvField(c.status), csvField(c.track || 'ai'), csvField(c.linkedin_url),
+        csvField(cl.added_date ? cl.added_date.slice(0, 10) : ''),
+        csvField(c.last_touchpoint_date ? c.last_touchpoint_date.slice(0, 10) : ''),
+        csvField(cl.is_active_campaign ? 'Yes' : 'No'),
+      ].join(','));
+    });
+    const csv = '\uFEFF' + lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (list.name || 'list').replace(/[^a-z0-9]+/gi, '_') + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    setExporting(null);
+  }
+
+  // ── Bulk-push a list into outreach (AI or Templated track) ────────────────
+
+  async function openOutreachModal(list) {
+    setOutreachTarget(list);
+    setOutreachResult(null);
+    setOutreachTrack('ai');
+    setOutreachTemplateId('');
+    setOutreachLoading(true);
+    await ensureListContacts(list.id);
+    const [{ data: tpls }, { data: mboxes }] = await Promise.all([
+      supabase.from('templates').select('*').eq('status', 'approved').eq('visibility', 'org').order('name'),
+      supabase.from('email_accounts').select('id, email_address').eq('user_id', user.id).eq('is_active', true).order('created_at'),
+    ]);
+    setOutreachTemplates(tpls || []);
+    setOutreachMailboxes(mboxes || []);
+    setOutreachMailboxId(mboxes && mboxes.length ? mboxes[0].id : '');
+    setOutreachLoading(false);
+  }
+
+  function outreachEligibleContacts() {
+    if (!outreachTarget) return [];
+    const rows = listContacts[outreachTarget.id] || [];
+    return rows.filter(r => r.contact && r.contact.owner_id === user.id);
+  }
+
+  async function runBulkOutreach() {
+    if (outreachTrack === 'templated' && !outreachTemplateId) return;
+    const eligible = outreachEligibleContacts();
+    if (!eligible.length) return;
+    setOutreachRunning(true);
+    const now = new Date().toISOString();
+    const mailbox = outreachMailboxes.find(m => m.id === outreachMailboxId);
+    const tpl = outreachTemplates.find(t => t.id === outreachTemplateId);
+    let steps = [];
+    if (outreachTrack === 'templated') {
+      const { data } = await supabase.from('template_steps').select('*').eq('template_id', outreachTemplateId).order('step_number');
+      steps = data || [];
+    }
+    let started = 0;
+    for (const row of eligible) {
+      const c = row.contact;
+      const updatePayload = { status: 'Fresh', next_followup: now, track: outreachTrack };
+      if (!c.sender_account_id && mailbox) {
+        updatePayload.sender_account_id = mailbox.id;
+        updatePayload.sender_email = mailbox.email_address;
+      }
+      await supabase.from('contacts').update(updatePayload).eq('id', c.id);
+      if (outreachTrack === 'templated') {
+        await supabase.from('template_assignments').insert({
+          contact_id: c.id, template_id: outreachTemplateId, template_name: tpl ? tpl.name : '',
+          template_version: tpl ? tpl.version : 1, steps, current_step: 1, status: 'active', assigned_by: user.id,
+        });
+      }
+      await supabase.from('activity_log').insert({
+        actor_id: user.id, contact_id: c.id, activity_type: 'outreach_started',
+        details: { started_from: 'list', list_name: outreachTarget.name },
+      });
+      started++;
+    }
+    setOutreachResult({ started, total: eligible.length, skipped: (listContacts[outreachTarget.id] || []).length - eligible.length });
+    setOutreachRunning(false);
+    fetchListContacts(outreachTarget.id);
+  }
+
+  function closeOutreach() {
+    setOutreachTarget(null);
+    setOutreachResult(null);
+  }
+
+  // ── Find & merge duplicate contacts within a list ──────────────────────────
+
+  function normKey(s) { return (s || '').trim().toLowerCase(); }
+
+  async function openDuplicatesModal(list) {
+    setDupTarget(list);
+    setDupLoading(true);
+    const rows = await ensureListContacts(list.id);
+    const byEmail = {};
+    const byName = {};
+    rows.forEach(r => {
+      const c = r.contact;
+      if (!c) return;
+      const ek = normKey(c.email);
+      if (ek) { (byEmail[ek] = byEmail[ek] || []).push(r); }
+      const nk = normKey((c.first_name || '') + ' ' + (c.last_name || '')) + '|' + normKey(c.company);
+      if (nk !== '|' && nk.trim() !== '|') { (byName[nk] = byName[nk] || []).push(r); }
+    });
+    const groupsMap = new Map();
+    [...Object.values(byEmail), ...Object.values(byName)].forEach(g => {
+      if (g.length < 2) return;
+      const key = g.map(r => r.contact.id).sort().join(',');
+      groupsMap.set(key, g);
+    });
+    setDupGroups([...groupsMap.values()]);
+    setDupLoading(false);
+  }
+
+  async function mergeDuplicateGroup(group, keepId) {
+    setDupMerging(keepId);
+    const losers = group.filter(r => r.contact.id !== keepId);
+    for (const r of losers) {
+      await supabase.from('contact_lists').delete().eq('id', r.cl.id);
+      const { data: activity } = await supabase.from('activity_log').select('id').eq('contact_id', r.contact.id).limit(1);
+      if (!r.contact.last_contacted && (!activity || activity.length === 0)) {
+        await supabase.from('contact_lists').delete().eq('contact_id', r.contact.id);
+        await supabase.from('contacts').delete().eq('id', r.contact.id);
+      }
+    }
+    setDupMerging(null);
+    if (dupTarget) {
+      await fetchListContacts(dupTarget.id);
+      openDuplicatesModal(dupTarget);
+    }
+  }
+
+  function closeDuplicates() {
+    setDupTarget(null);
+    setDupGroups([]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -649,6 +837,136 @@ export default function Lists() {
         </div>
       )}
 
+      {/* Start Outreach Modal */}
+      {outreachTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 28, width: 460, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#111', marginBottom: 4 }}>🚀 Start Outreach</div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 18 }}>From list: <strong>{outreachTarget.name}</strong></div>
+
+            {outreachResult ? (
+              <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>✅</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#111', marginBottom: 6 }}>Outreach started</div>
+                <div style={{ fontSize: 13, color: '#6b7280' }}>
+                  Started {outreachResult.started} of your {outreachResult.total} contacts in this list.
+                  {outreachResult.skipped > 0 && (' ' + outreachResult.skipped + ' other contact' + (outreachResult.skipped !== 1 ? 's' : '') + ' in this list belong to teammates and were skipped.')}
+                </div>
+                <button onClick={closeOutreach}
+                  style={{ marginTop: 20, padding: '9px 24px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  Done
+                </button>
+              </div>
+            ) : outreachLoading ? (
+              <div style={{ textAlign: 'center', padding: '30px 0', color: '#6b7280', fontSize: 13 }}>Loading…</div>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 16, padding: '8px 12px', background: '#f9fafb', borderRadius: 8 }}>
+                  {outreachEligibleContacts().length} of your contacts in this list are eligible. Contacts owned by teammates are skipped.
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 8 }}>Track</label>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <div onClick={() => setOutreachTrack('ai')}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', textAlign: 'center',
+                        border: '1.5px solid ' + (outreachTrack === 'ai' ? '#2563eb' : '#e5e7eb'),
+                        background: outreachTrack === 'ai' ? '#eff6ff' : '#fff', fontSize: 13, fontWeight: 600,
+                        color: outreachTrack === 'ai' ? '#1d4ed8' : '#374151' }}>
+                      ✨ AI-personalized
+                    </div>
+                    <div onClick={() => setOutreachTrack('templated')}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', textAlign: 'center',
+                        border: '1.5px solid ' + (outreachTrack === 'templated' ? '#2563eb' : '#e5e7eb'),
+                        background: outreachTrack === 'templated' ? '#eff6ff' : '#fff', fontSize: 13, fontWeight: 600,
+                        color: outreachTrack === 'templated' ? '#1d4ed8' : '#374151' }}>
+                      📄 Templated
+                    </div>
+                  </div>
+                </div>
+                {outreachTrack === 'templated' && (
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Template</label>
+                    <select value={outreachTemplateId} onChange={e => setOutreachTemplateId(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #d1d5db', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}>
+                      <option value="">— choose a template —</option>
+                      {outreachTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                {outreachMailboxes.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Send from (used only for contacts without a mailbox already set)</label>
+                    <select value={outreachMailboxId} onChange={e => setOutreachMailboxId(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #d1d5db', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}>
+                      {outreachMailboxes.map(m => <option key={m.id} value={m.id}>{m.email_address}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button onClick={closeOutreach} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+                  <button onClick={runBulkOutreach} disabled={outreachRunning || !outreachEligibleContacts().length || (outreachTrack === 'templated' && !outreachTemplateId)}
+                    style={{ padding: '8px 20px', borderRadius: 8, border: 'none',
+                      background: (!outreachEligibleContacts().length || (outreachTrack === 'templated' && !outreachTemplateId)) ? '#9ca3af' : '#dc2626',
+                      color: '#fff', fontSize: 13, fontWeight: 600,
+                      cursor: (!outreachEligibleContacts().length || (outreachTrack === 'templated' && !outreachTemplateId)) ? 'not-allowed' : 'pointer' }}>
+                    {outreachRunning ? 'Starting…' : 'Start outreach for ' + outreachEligibleContacts().length + ' contacts'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Find Duplicates Modal */}
+      {dupTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 28, width: 560, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#111', marginBottom: 4 }}>🔀 Find Duplicates</div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 16 }}>In list: <strong>{dupTarget.name}</strong></div>
+
+            {dupLoading ? (
+              <div style={{ textAlign: 'center', padding: '30px 0', color: '#6b7280', fontSize: 13 }}>Scanning for duplicates…</div>
+            ) : dupGroups.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '30px 0' }}>
+                <div style={{ fontSize: 30, marginBottom: 10 }}>✅</div>
+                <div style={{ fontSize: 13, color: '#6b7280' }}>No duplicates found — same email or same name &amp; company.</div>
+              </div>
+            ) : (
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                {dupGroups.map((group, gi) => (
+                  <div key={gi} style={{ border: '1px solid #fde68a', background: '#fffbeb', borderRadius: 10, padding: 12, marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#b45309', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {group.length} possible duplicates — pick the one to keep
+                    </div>
+                    {group.map(r => {
+                      const c = r.contact;
+                      const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || c.email || '—';
+                      return (
+                        <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{name}</div>
+                            <div style={{ fontSize: 11, color: '#9ca3af' }}>{c.email} · {c.company || '—'} · {c.status || '—'}</div>
+                          </div>
+                          <button onClick={() => mergeDuplicateGroup(group, c.id)} disabled={dupMerging === c.id}
+                            style={{ padding: '5px 12px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                              background: dupMerging === c.id ? '#fde68a' : '#d97706', color: '#fff' }}>
+                            {dupMerging === c.id ? 'Merging…' : 'Keep this one'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: dupGroups.length ? 4 : 16 }}>
+              <button onClick={closeDuplicates} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Lists */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: '#aaa' }}>Loading lists...</div>
@@ -741,6 +1059,15 @@ export default function Lists() {
                       </button>
                       <button onClick={e => { e.stopPropagation(); openCsvModal(list); }} style={btnStyle('#059669')}>
                         📎 Upload CSV
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); exportListCSV(list); }} disabled={exporting === list.id} style={btnStyle('#374151')}>
+                        {exporting === list.id ? 'Exporting…' : '📤 Export CSV'}
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); openOutreachModal(list); }} style={btnStyle('#dc2626')}>
+                        🚀 Start Outreach
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); openDuplicatesModal(list); }} style={btnStyle('#d97706')}>
+                        🔀 Find Duplicates
                       </button>
                     </div>
 
