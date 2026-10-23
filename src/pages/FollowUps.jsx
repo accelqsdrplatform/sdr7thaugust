@@ -305,6 +305,7 @@ export default function FollowUps() {
     try {
       const res=await supabase.functions.invoke('generate-email',{body:{
         contact:{
+          first_name:contact.first_name||'', last_name:contact.last_name||'',
           full_name:((contact.first_name||'')+' '+(contact.last_name||'')).trim(),
           title:contact.title,company:contact.company,email:contact.email,
           response:contact.response_type,industry:account.industry,
