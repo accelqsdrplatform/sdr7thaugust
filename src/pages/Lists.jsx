@@ -227,26 +227,32 @@ export default function Lists() {
     const withEmail = allContacts.filter(c => c.email);
 
     if (withEmail.length > 0) {
-      // Preserve an existing contact's current owner on conflict; only new contacts
-      // get owner_id set to the importing user. Without owner_id, newly-created rows
-      // are invisible under owner-scoped views (the "My" filter elsewhere in this app).
+      // A batch upsert is one SQL statement: if it tries to UPDATE even a single
+      // existing row owned by a different rep, that row's RLS policy rejects the
+      // whole statement and EVERY row in the batch is rolled back -- including
+      // brand-new contacts that had nothing to do with the conflict. So: only ever
+      // INSERT contacts that don't exist yet (owned by the importing user); never
+      // attempt to update a contact that already exists, whoever owns it.
       const apolloEmails = withEmail.map(c => c.email);
-      const { data: existingApollo } = await supabase.from('contacts').select('email, owner_id').in('email', apolloEmails);
-      const ownerByEmail = {};
-      (existingApollo || []).forEach(e => { ownerByEmail[e.email] = e.owner_id; });
-      await supabase.from('contacts').upsert(
-        withEmail.map(c => ({
-          first_name: c.first_name || '',
-          last_name: c.last_name || '',
-          email: c.email,
-          company: c.organization_name || c.account?.name || '',
-          title: c.title || '',
-          linkedin_url: c.linkedin_url || null,
-          status: 'Fresh',
-          owner_id: ownerByEmail[c.email] || user.id,
-        })),
-        { onConflict: 'email', ignoreDuplicates: false }
-      );
+      const { data: existingApollo } = await supabase.from('contacts').select('id, email').in('email', apolloEmails);
+      const existingEmails = new Set((existingApollo || []).map(e => e.email));
+      const newApolloContacts = withEmail.filter(c => !existingEmails.has(c.email));
+
+      if (newApolloContacts.length > 0) {
+        const { error: insertErr } = await supabase.from('contacts').insert(
+          newApolloContacts.map(c => ({
+            first_name: c.first_name || '',
+            last_name: c.last_name || '',
+            email: c.email,
+            company: c.organization_name || c.account?.name || '',
+            title: c.title || '',
+            linkedin_url: c.linkedin_url || null,
+            status: 'Fresh',
+            owner_id: user.id,
+          }))
+        );
+        if (insertErr) setApolloError(insertErr.message || 'Some contacts could not be saved');
+      }
 
       const emails = withEmail.map(c => c.email);
       const { data: found } = await supabase.from('contacts').select('id').in('email', emails);
@@ -389,29 +395,52 @@ export default function Lists() {
 
     let added = 0;
     if (parsedRows.length > 0) {
-      // Never blank out a name/company/title a contact already has in the CRM just
-      // because this CSV row left that column empty -- only fill in what the row
-      // actually supplies, and keep whatever was already on file otherwise.
+      // A batch upsert is one SQL statement: if it tries to UPDATE even a single
+      // existing row owned by a different rep, that row's RLS policy rejects the
+      // whole statement and EVERY row in the batch is rolled back -- including
+      // brand-new contacts that had nothing to do with the conflict. So: only ever
+      // INSERT contacts that don't exist yet, and only UPDATE existing contacts the
+      // importing user already owns (never touch another rep's existing contact).
       const emails = parsedRows.map(c => c.email);
-      const { data: existing } = await supabase.from('contacts').select('email, first_name, last_name, company, title, owner_id').in('email', emails);
+      const { data: existing } = await supabase.from('contacts').select('id, email, first_name, last_name, company, title, owner_id').in('email', emails);
       const byEmail = {};
       (existing || []).forEach(e => { byEmail[e.email] = e; });
-      const contacts = parsedRows.map(c => {
-        const prior = byEmail[c.email];
-        return {
-          first_name: c.first_name || prior?.first_name || '',
-          last_name: c.last_name || prior?.last_name || '',
-          email: c.email,
-          company: c.company || prior?.company || '',
-          title: c.title || prior?.title || '',
-          status: 'Fresh',
-          // Keep an existing contact's current owner; only newly-created contacts are
-          // owned by the user doing this import (owner_id is required for the row to
-          // show up under owner-scoped views elsewhere in the app).
-          owner_id: prior?.owner_id || user.id,
-        };
-      });
-      await supabase.from('contacts').upsert(contacts, { onConflict: 'email', ignoreDuplicates: false });
+
+      const newRows = parsedRows.filter(c => !byEmail[c.email]);
+      const ownRows = parsedRows.filter(c => byEmail[c.email] && byEmail[c.email].owner_id === user.id);
+
+      if (newRows.length > 0) {
+        await supabase.from('contacts').insert(
+          newRows.map(c => ({
+            first_name: c.first_name || '',
+            last_name: c.last_name || '',
+            email: c.email,
+            company: c.company || '',
+            title: c.title || '',
+            status: 'Fresh',
+            owner_id: user.id,
+          }))
+        );
+      }
+
+      if (ownRows.length > 0) {
+        await supabase.from('contacts').upsert(
+          ownRows.map(c => {
+            const prior = byEmail[c.email];
+            return {
+              first_name: c.first_name || prior?.first_name || '',
+              last_name: c.last_name || prior?.last_name || '',
+              email: c.email,
+              company: c.company || prior?.company || '',
+              title: c.title || prior?.title || '',
+              status: 'Fresh',
+              owner_id: user.id,
+            };
+          }),
+          { onConflict: 'email', ignoreDuplicates: false }
+        );
+      }
+
       const { data: found } = await supabase.from('contacts').select('id').in('email', emails);
       if (found?.length) {
         await supabase.from('contact_lists').upsert(
