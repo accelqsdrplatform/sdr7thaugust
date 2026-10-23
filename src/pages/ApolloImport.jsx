@@ -63,6 +63,8 @@ export default function ApolloImport() {
   const [selectedNewCompanies, setSelectedNewCompanies] = useState(new Set());
   const [pendingAssignTo, setPendingAssignTo] = useState(null);
   const [mode, setMode] = useState('list');
+  const [createListFromImport, setCreateListFromImport] = useState(true);
+  const [importListName, setImportListName] = useState('');
   const [filters, setFilters] = useState({
     titles: '', seniorities: [], personLocations: '', orgLocations: '',
     headcounts: [], keywordTags: '', keywords: '', domains: '',
@@ -245,6 +247,7 @@ export default function ApolloImport() {
     const toImport = contacts.filter(c => !dupSet.has(c.email) || duplicateAction[c.email] === 'overwrite');
     setImportProgress({ done: 0, total: toImport.length });
     let imported = 0, failed = 0;
+    const importedIds = [];
     for (let i = 0; i < toImport.length; i++) {
       const c = toImport[i];
       try {
@@ -259,10 +262,12 @@ export default function ApolloImport() {
         const accountId = (domain && byDomain[domain]) || (companyName && byName[companyName.toLowerCase()]) || null;
         const row = { first_name: c.first_name || '', last_name: c.last_name || '', email: email || null, title: c.title || null, company: c.organization?.name || null, linkedin_url: c.linkedin_url || null, owner_id: assignTo, status: 'Fresh', account_id: accountId, source: mode === 'search' ? 'apollo_search' : 'apollo_import' };
         if (c.email && duplicateAction[c.email] === 'overwrite') {
-          await supabase.from('contacts').update(row).eq('email', c.email);
+          const { data: updated } = await supabase.from('contacts').update(row).eq('email', c.email).select('id').single();
+          if (updated?.id) importedIds.push(updated.id);
         } else {
           const { data: inserted } = await supabase.from('contacts').insert(row).select('id').single();
           if (inserted?.id) {
+            importedIds.push(inserted.id);
             await supabase.from('activity_log').insert({
               actor_id: profile?.id || null, contact_id: inserted.id, activity_type: 'contact_created',
               details: { source: mode === 'search' ? 'apollo_search' : 'apollo_import' },
@@ -273,7 +278,19 @@ export default function ApolloImport() {
       } catch (_) { failed++; }
       setImportProgress({ done: i + 1, total: toImport.length });
     }
-    setImportResults({ imported, skipped: contacts.length - toImport.length, failed });
+    let createdListName = null;
+    if (createListFromImport && importedIds.length > 0) {
+      const finalName = importListName.trim() || ('Apollo Import ' + new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
+      const { data: newList } = await supabase.from('lists').insert({ name: finalName, owner_id: assignTo || (profile && profile.id) || null }).select('id, name').single();
+      if (newList && newList.id) {
+        createdListName = newList.name;
+        await supabase.from('contact_lists').upsert(
+          importedIds.map(id => ({ contact_id: id, list_id: newList.id, added_date: new Date().toISOString() })),
+          { onConflict: 'contact_id,list_id' }
+        );
+      }
+    }
+    setImportResults({ imported, skipped: contacts.length - toImport.length, failed, listName: createdListName });
     setStep('done');
   }
 
@@ -478,6 +495,15 @@ export default function ApolloImport() {
               <input type="checkbox" checked={enrichEmails} onChange={e=>setEnrichEmails(e.target.checked)} style={{ width:16,height:16,cursor:'pointer' }} />
               <span><strong>Enrich missing emails</strong><span style={{ color:'#888',marginLeft:6 }}>— Uses Apollo credits ({contacts.filter(c=>!c.email).length} without email)</span></span>
             </label>
+            <label style={{ display:'flex',alignItems:'center',gap:10,cursor:'pointer',fontSize:13,marginTop:10 }}>
+              <input type="checkbox" checked={createListFromImport} onChange={e=>setCreateListFromImport(e.target.checked)} style={{ width:16,height:16,cursor:'pointer' }} />
+              <span><strong>Create a list from this import</strong><span style={{ color:'#888',marginLeft:6 }}>— groups the imported contacts so you can export or start outreach on them as a batch</span></span>
+            </label>
+            {createListFromImport && (
+              <input value={importListName} onChange={e=>setImportListName(e.target.value)}
+                placeholder={(lists.find(l=>l.id===selectedList) && lists.find(l=>l.id===selectedList).name) || ('Apollo Import ' + new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}))}
+                style={{ marginTop:8, width:'100%', maxWidth:360, padding:'8px 12px', border:'1px solid #e0e0e0', borderRadius:8, fontSize:13, outline:'none', boxSizing:'border-box' }} />
+            )}
           </div>
           <button onClick={runImport} disabled={!isOwner&&!selectedSdr}
             style={{ padding:'10px 28px',background:'#2563eb',color:'#fff',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:(!isOwner&&!selectedSdr)?'not-allowed':'pointer',opacity:(!isOwner&&!selectedSdr)?0.6:1 }}>
@@ -530,6 +556,9 @@ export default function ApolloImport() {
         <div style={{ background:'#fff',border:'0.5px solid #e8e8e4',borderRadius:12,padding:32,textAlign:'center' }}>
           <div style={{ fontSize:32,marginBottom:12 }}>✅</div>
           <div style={{ fontSize:16,fontWeight:600,color:'#111',marginBottom:16 }}>Import complete</div>
+          {importResults.listName && (
+            <div style={{ fontSize:13, color:'#555', marginBottom:16 }}>Added to list: <strong>{importResults.listName}</strong></div>
+          )}
           <div style={{ display:'flex',gap:16,justifyContent:'center',marginBottom:24 }}>
             {[{label:'Imported',value:importResults.imported,color:'#059669'},{label:'Skipped',value:importResults.skipped,color:'#d97706'},{label:'Failed',value:importResults.failed,color:'#dc2626'}].map(m=>(
               <div key={m.label} style={{ background:'#f9f9f7',borderRadius:10,padding:'14px 24px' }}>
