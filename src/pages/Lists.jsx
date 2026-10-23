@@ -2,6 +2,22 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
+function normalizeDomain(url) {
+  if (!url) return '';
+  return url.trim().toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+    .split('?')[0];
+}
+
+function extractApolloCompanyInfo(c) {
+  const org = c.organization || c.account || {};
+  const name = org.name || c.organization_name || c.account?.name || '';
+  const domain = normalizeDomain(org.primary_domain || org.website_url || org.domain || org.website || '');
+  return { name, domain };
+}
+
 function formatDate(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -238,18 +254,58 @@ export default function Lists() {
       const existingEmails = new Set((existingApollo || []).map(e => e.email));
       const newApolloContacts = withEmail.filter(c => !existingEmails.has(c.email));
 
+      // Match each new contact to one of the importing user's existing accounts by
+      // domain (falling back to name), and create accounts for any company that
+      // doesn't have one yet -- same behaviour as the main Apollo Import wizard.
+      const { data: ownedAccounts } = await supabase.from('accounts').select('id, name, website').eq('owner_id', user.id);
+      const byDomain = {}, byName = {};
+      (ownedAccounts || []).forEach(a => {
+        if (a.website) { const d = normalizeDomain(a.website); if (d) byDomain[d] = a.id; }
+        if (a.name) byName[a.name.toLowerCase()] = a.id;
+      });
+      const seenCompany = new Set();
+      const companiesToCreate = [];
+      newApolloContacts.forEach(c => {
+        const { name, domain } = extractApolloCompanyInfo(c);
+        if (!name) return;
+        const key = domain || name.toLowerCase();
+        if (seenCompany.has(key)) return;
+        seenCompany.add(key);
+        const matchedId = (domain && byDomain[domain]) || byName[name.toLowerCase()];
+        if (!matchedId) companiesToCreate.push({ name, domain, website: domain ? ('https://' + domain) : '' });
+      });
+      if (companiesToCreate.length > 0) {
+        const { data: createdAccounts, error: accountErr } = await supabase.from('accounts').upsert(
+          companiesToCreate.map(c => ({ name: c.name, website: c.website || null, owner_id: user.id })),
+          { onConflict: 'owner_id,name' }
+        ).select('id, name, website');
+        if (accountErr) {
+          setApolloError('Some accounts could not be created: ' + accountErr.message);
+        } else {
+          (createdAccounts || []).forEach(a => {
+            if (a.website) { const d = normalizeDomain(a.website); if (d) byDomain[d] = a.id; }
+            if (a.name) byName[a.name.toLowerCase()] = a.id;
+          });
+        }
+      }
+
       if (newApolloContacts.length > 0) {
         const { error: insertErr } = await supabase.from('contacts').insert(
-          newApolloContacts.map(c => ({
-            first_name: c.first_name || '',
-            last_name: c.last_name || '',
-            email: c.email,
-            company: c.organization_name || c.account?.name || '',
-            title: c.title || '',
-            linkedin_url: c.linkedin_url || null,
-            status: 'Fresh',
-            owner_id: user.id,
-          }))
+          newApolloContacts.map(c => {
+            const { name: companyName, domain } = extractApolloCompanyInfo(c);
+            const accountId = (domain && byDomain[domain]) || (companyName && byName[companyName.toLowerCase()]) || null;
+            return {
+              first_name: c.first_name || '',
+              last_name: c.last_name || '',
+              email: c.email,
+              company: c.organization_name || c.account?.name || '',
+              title: c.title || '',
+              linkedin_url: c.linkedin_url || null,
+              status: 'Fresh',
+              owner_id: user.id,
+              account_id: accountId,
+            };
+          })
         );
         if (insertErr) setApolloError(insertErr.message || 'Some contacts could not be saved');
       }
