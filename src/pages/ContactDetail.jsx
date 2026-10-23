@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { inferFromTitle } from '../utils/inferContact'; import { markContactBounced } from '../utils/bounce';
+import { toast } from 'sonner';
 
 const STAGES = ['Fresh','F1','F2','F3','F4','F5'];
 const OUTCOMES = ['won','lost','bounced','unsubscribed'];
@@ -110,6 +111,10 @@ export default function ContactDetail() {
   const [pitch, setPitch] = useState('');
   const [savingPitch, setSavingPitch] = useState(false);
   const [pitchSaved, setPitchSaved] = useState(false);
+  const [savingPitchTypes, setSavingPitchTypes] = useState(false);
+  const [pitchTypesSaved, setPitchTypesSaved] = useState(false);
+  const [savingCampaign, setSavingCampaign] = useState(false);
+  const [campaignSaved, setCampaignSaved] = useState(false);
   const [persona, setPersona] = useState('');
   const [savingPersona, setSavingPersona] = useState(false);
   const [personaSaved, setPersonaSaved] = useState(false);
@@ -598,13 +603,23 @@ export default function ContactDetail() {
                     ))}
                   </div>
                   <button onClick={async () => {
+                    setSavingPitchTypes(true);
+                    setPitchTypesSaved(false);
                     const primary = pitchTypes[0] || null;
-                    await supabase.from('contacts').update({ pitch_types: pitchTypes, pitch_type: primary }).eq('id', id);
+                    const { error } = await supabase.from('contacts').update({ pitch_types: pitchTypes, pitch_type: primary }).eq('id', id);
+                    setSavingPitchTypes(false);
+                    if (error) {
+                      toast.error('Could not save pitch type: ' + error.message);
+                      return;
+                    }
                     setPitchType(primary || '');
                     setContact(c => ({ ...c, pitch_types: pitchTypes, pitch_type: primary }));
+                    setPitchTypesSaved(true);
+                    setTimeout(() => setPitchTypesSaved(false), 2000);
                   }}
-                    style={{alignSelf:'flex-start',padding:'7px 16px',border:'none',borderRadius:8,fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',background:'#2563eb',color:'#fff'}}>
-                    Save
+                    disabled={savingPitchTypes}
+                    style={{alignSelf:'flex-start',padding:'7px 16px',border:'none',borderRadius:8,fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',background:pitchTypesSaved?'#059669':'#2563eb',color:'#fff',transition:'background 0.2s'}}>
+                    {savingPitchTypes ? 'Saving…' : pitchTypesSaved ? '✓ Saved' : 'Save'}
                   </button>
                 </div>
                 {pitchType && pitchTypes.length === 0 && <div style={{marginTop:5,fontSize:11,color:'#888',fontStyle:'italic'}}>Auto-inferred from title — edit if needed</div>}
@@ -618,11 +633,21 @@ export default function ContactDetail() {
                     {CAMPAIGNS.map(cm => <option key={cm} value={cm}>{cm}</option>)}
                   </select>
                   <button onClick={async () => {
-                    await supabase.from('contacts').update({ campaign }).eq('id', id);
+                    setSavingCampaign(true);
+                    setCampaignSaved(false);
+                    const { error } = await supabase.from('contacts').update({ campaign }).eq('id', id);
+                    setSavingCampaign(false);
+                    if (error) {
+                      toast.error('Could not save campaign: ' + error.message);
+                      return;
+                    }
                     setContact(c => ({ ...c, campaign }));
+                    setCampaignSaved(true);
+                    setTimeout(() => setCampaignSaved(false), 2000);
                   }}
-                    style={{padding:'7px 16px',border:'none',borderRadius:8,fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',background:'#2563eb',color:'#fff'}}>
-                    Save
+                    disabled={savingCampaign}
+                    style={{padding:'7px 16px',border:'none',borderRadius:8,fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',background:campaignSaved?'#059669':'#2563eb',color:'#fff',transition:'background 0.2s'}}>
+                    {savingCampaign ? 'Saving…' : campaignSaved ? '✓ Saved' : 'Save'}
                   </button>
                 </div>
               </div>
