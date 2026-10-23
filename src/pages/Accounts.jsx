@@ -924,7 +924,7 @@ export default function Accounts() {
                   setFilterBy('all'); setSortBy('score');
                   setAcctIndustryFilter(''); setAcctHeadcountFilter('');
                   setAcctLastTouchedFrom(''); setAcctLastTouchedTo(''); setAcctNeverTouched(false);
-                  setAcctFreshCountFilter('');
+                  setAcctFreshCountFilter(''); setAcctHqFilter(''); setAcctStateFilter(''); setAcctListFilter('');
                 }}
                   style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
                   Clear filters ({activeAcctFilterCount})
