@@ -332,9 +332,21 @@ export default function Lists() {
       setCsvHeaders(headers);
       setCsvParsed(rows);
       const findCol = (...names) => headers.find(h => names.some(n => h.toLowerCase().replace(/[\s_-]/g, '').includes(n.toLowerCase().replace(/[\s_-]/g, '')))) || '';
+      const firstCol = findCol('firstname', 'first name', 'first_name');
+      const lastCol = findCol('lastname', 'last name', 'last_name');
+      // Some exports only have a single combined name column (e.g. Name, Full Name,
+      // Contact Name) instead of separate first/last columns. When neither of those was
+      // found, look for a standalone name column -- but never one that is really a company
+      // or account name, so we avoid importing an organization name as a person name.
+      const fullNameCol = (!firstCol && !lastCol) ? (headers.find(h => {
+        const norm = h.toLowerCase().replace(/[\s_-]/g, '');
+        if (['company','account','organization','employer'].some(x => norm.includes(x))) return false;
+        return norm === 'name' || norm === 'fullname' || norm === 'contactname' || norm === 'personname';
+      }) || '') : '';
       setCsvMapping({
-        first_name: findCol('firstname', 'first name', 'first_name'),
-        last_name: findCol('lastname', 'last name', 'last_name'),
+        first_name: firstCol,
+        last_name: lastCol,
+        full_name: fullNameCol,
         email: findCol('email', 'e-mail'),
         company: findCol('company', 'organization', 'account', 'employer'),
         title: findCol('title', 'jobtitle', 'position', 'role'),
@@ -347,19 +359,47 @@ export default function Lists() {
     if (!csvParsed.length || !csvTarget) return;
     setCsvImporting(true);
 
-    const contacts = csvParsed.map(row => ({
+    const parsedRows = csvParsed.map(row => ({
       first_name: (csvMapping.first_name ? row[csvMapping.first_name] : '') || '',
       last_name: (csvMapping.last_name ? row[csvMapping.last_name] : '') || '',
-      email: (csvMapping.email ? row[csvMapping.email] : '') || '',
+      full_name: (csvMapping.full_name ? row[csvMapping.full_name] : '') || '',
+      email: ((csvMapping.email ? row[csvMapping.email] : '') || '').trim(),
       company: (csvMapping.company ? row[csvMapping.company] : '') || '',
       title: (csvMapping.title ? row[csvMapping.title] : '') || '',
-      status: 'Fresh',
     })).filter(c => c.email);
 
+    // When there is no dedicated first/last name for a row, fall back to splitting
+    // the combined full-name column (first word = first name, rest = last name).
+    parsedRows.forEach(c => {
+      if (!c.first_name && !c.last_name && c.full_name) {
+        const parts = c.full_name.trim().split(/\s+/);
+        c.first_name = parts[0] || '';
+        c.last_name = parts.slice(1).join(' ') || '';
+      }
+      delete c.full_name;
+    });
+
     let added = 0;
-    if (contacts.length > 0) {
+    if (parsedRows.length > 0) {
+      // Never blank out a name/company/title a contact already has in the CRM just
+      // because this CSV row left that column empty -- only fill in what the row
+      // actually supplies, and keep whatever was already on file otherwise.
+      const emails = parsedRows.map(c => c.email);
+      const { data: existing } = await supabase.from('contacts').select('email, first_name, last_name, company, title').in('email', emails);
+      const byEmail = {};
+      (existing || []).forEach(e => { byEmail[e.email] = e; });
+      const contacts = parsedRows.map(c => {
+        const prior = byEmail[c.email];
+        return {
+          first_name: c.first_name || prior?.first_name || '',
+          last_name: c.last_name || prior?.last_name || '',
+          email: c.email,
+          company: c.company || prior?.company || '',
+          title: c.title || prior?.title || '',
+          status: 'Fresh',
+        };
+      });
       await supabase.from('contacts').upsert(contacts, { onConflict: 'email', ignoreDuplicates: false });
-      const emails = contacts.map(c => c.email);
       const { data: found } = await supabase.from('contacts').select('id').in('email', emails);
       if (found?.length) {
         await supabase.from('contact_lists').upsert(
@@ -370,7 +410,7 @@ export default function Lists() {
       }
     }
 
-    setCsvResult({ total: csvParsed.length, withEmail: contacts.length, added });
+    setCsvResult({ total: csvParsed.length, withEmail: parsedRows.length, added });
     setCsvImporting(false);
     fetchListContacts(csvTarget.id);
   }
@@ -788,7 +828,7 @@ export default function Lists() {
                 <div style={{ fontSize: 13, color: '#374151', marginBottom: 14 }}>
                   <strong>{csvParsed.length}</strong> rows detected. Map your columns:
                 </div>
-                {['first_name', 'last_name', 'email', 'company', 'title'].map(field => (
+                {['first_name', 'last_name', 'full_name', 'email', 'company', 'title'].map(field => (
                   <div key={field} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                     <div style={{ width: 100, fontSize: 12, fontWeight: 600, color: '#374151', textTransform: 'capitalize' }}>
                       {field.replace('_', ' ')}{field === 'email' ? ' *' : ''}
