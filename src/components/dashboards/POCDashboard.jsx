@@ -52,7 +52,7 @@ export default function POCDashboard() {
         <p style={{ fontSize: 13, color: '#888', margin: '3px 0 0' }}>{profile?.full_name} · {profile?.region}</p>
       </div>
 
-      <EmailMetricsPanel ownIds={[user.id]} teamIds={teamIds} showToggle defaultView="team" />
+      <EmailMetricsPanel ownIds={[user.id]} teamMembers={team.map(m => ({ id: m.user_id, name: m.full_name }))} showToggle defaultView="team" />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
         {[
