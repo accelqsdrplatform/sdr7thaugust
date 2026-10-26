@@ -10,6 +10,7 @@ export default function ManagerDashboard() {
   const [activity, setActivity] = useState([]);
   const [topPerformer, setTopPerformer] = useState(null);
   const [teamIds, setTeamIds] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
 
   useEffect(() => {
     async function load() {
@@ -28,6 +29,7 @@ export default function ManagerDashboard() {
       ]);
 
       const c = allContacts || [];
+      setTeamMembers((hierarchy || []).map(h => ({ id: h.user_id, name: h.full_name })));
       setStats({
         contacts: c.filter(x => !x.bounced).length,
         replies: c.filter(x => ['replied','meeting','won'].includes(x.status)).length,
@@ -75,7 +77,7 @@ export default function ManagerDashboard() {
         <p style={{ fontSize: 13, color: '#888', margin: '3px 0 0' }}>{profile?.full_name} · {profile?.region}</p>
       </div>
 
-      <EmailMetricsPanel ownIds={[user.id]} teamIds={teamIds} showToggle defaultView="team" />
+      <EmailMetricsPanel ownIds={[user.id]} teamMembers={teamMembers} showToggle defaultView="team" />
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
