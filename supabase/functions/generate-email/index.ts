@@ -5,6 +5,44 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// The editable part of the writing-rules prompt -- what a rep sees and can
+// override from Settings > My Writing Prompts. Everything else about the
+// generation (fact grounding, stage word counts/CTA, dedup, output format)
+// is NOT exposed here and always uses the house logic below.
+const DEFAULT_WRITING_RULES = `GREETING:
+- Start with "Hi " followed by the exact value of "First name" from the FACT
+  LEDGER, then a comma, on its own opening line - e.g. "Hi Priya,". Never
+  "Hi there", never the full name, never the company name, never omit the
+  greeting. If First name is "unknown", open with "Hi," instead (no name).
+
+OPENING LINE:
+- About their world, not yours. Never open with I, We, My name, I hope, or the
+  company name.
+- Specific enough that it could not be sent to another company on the same
+  platform. If it could, it is not finished.
+- Do not reuse any opening sentence that appears in these instructions.
+
+LANGUAGE:
+- Plain text. No bullets, no bold, no markdown, no em dashes or en dashes.
+- Never: "I hope this finds you well", "just following up", "circling back",
+  "touching base", "reaching out because", "I wanted to", "quick question",
+  "at your earliest convenience", "I'd love to".
+- Never: revolutionary, cutting-edge, seamless, game-changing, leverage,
+  synergy, unlock, empower, robust, holistic, best-in-class, world-class.
+- Never describe ACCELQ as a no-code testing tool. Never say it replaces or
+  beats the platform they run.
+- No sign-off, no sender name, no signature. End on the last sentence the
+  stage spec calls for.
+
+SUBJECT LINE:
+- Under 50 characters. Natural, like internal mail -- not a marketing headline.
+- Capitalize the first letter of the subject.
+- Keep product names, platform names and acronyms in their correct case exactly
+  as written elsewhere in this prompt -- never lowercase them. For example:
+  API (not api), SAP (not sap), QA (not qa), ACCELQ (not accelq), ServiceNow,
+  Salesforce, nCino. The rest of the subject can stay in natural sentence case.
+- No ALL CAPS, no spam words, no colon used as a marketing device.`
+
 // ============================================================
 // 6 - STAGE SPECS (verbatim from PROMPT-email-generation.md)
 // ============================================================
@@ -264,7 +302,16 @@ serve(async (req) => {
   }
 
   try {
-    const { contact, stage, accountResearch, accountNote, priorEmails, customPrompt } = await req.json()
+    const { action, contact, stage, accountResearch, accountNote, priorEmails, customPrompt, customWritingRules } = await req.json()
+
+    // Settings > My Writing Prompts calls this to show the real current default
+    // text, pre-filled, before a rep writes their own version -- no AI call needed.
+    if (action === 'get_default_writing_rules') {
+      return new Response(JSON.stringify({ writingRulesBlock: DEFAULT_WRITING_RULES }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')
 
     if (!ANTHROPIC_API_KEY) {
@@ -468,39 +515,7 @@ Hard constraints:
     const writingRulesBlock = `========================================
 WRITING RULES
 ========================================
-GREETING:
-- Start with "Hi " followed by the exact value of "First name" from the FACT
-  LEDGER, then a comma, on its own opening line - e.g. "Hi Priya,". Never
-  "Hi there", never the full name, never the company name, never omit the
-  greeting. If First name is "unknown", open with "Hi," instead (no name).
-
-OPENING LINE:
-- About their world, not yours. Never open with I, We, My name, I hope, or the
-  company name.
-- Specific enough that it could not be sent to another company on the same
-  platform. If it could, it is not finished.
-- Do not reuse any opening sentence that appears in these instructions.
-
-LANGUAGE:
-- Plain text. No bullets, no bold, no markdown, no em dashes or en dashes.
-- Never: "I hope this finds you well", "just following up", "circling back",
-  "touching base", "reaching out because", "I wanted to", "quick question",
-  "at your earliest convenience", "I'd love to".
-- Never: revolutionary, cutting-edge, seamless, game-changing, leverage,
-  synergy, unlock, empower, robust, holistic, best-in-class, world-class.
-- Never describe ACCELQ as a no-code testing tool. Never say it replaces or
-  beats the platform they run.
-- No sign-off, no sender name, no signature. End on the last sentence the
-  stage spec calls for.
-
-SUBJECT LINE:
-- Under 50 characters. Natural, like internal mail -- not a marketing headline.
-- Capitalize the first letter of the subject.
-- Keep product names, platform names and acronyms in their correct case exactly
-  as written elsewhere in this prompt -- never lowercase them. For example:
-  API (not api), SAP (not sap), QA (not qa), ACCELQ (not accelq), ServiceNow,
-  Salesforce, nCino. The rest of the subject can stay in natural sentence case.
-- No ALL CAPS, no spam words, no colon used as a marketing device.
+${(customWritingRules && customWritingRules.trim()) ? customWritingRules.trim() : DEFAULT_WRITING_RULES}
 `
 
     // ---- custom instructions (SDR override, if provided) ----
