@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { toast } from 'sonner';
 
 export default function Settings() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const isDirector = profile?.role === 'admin';
   const [apiKey, setApiKey] = useState('');
   const [provider, setProvider] = useState('anthropic');
@@ -78,6 +79,83 @@ export default function Settings() {
     setTimeout(() => setApolloSaved(''), 4000);
   }
 
+  // ---- My Writing Prompts ----
+  const [myPrompts, setMyPrompts] = useState([]);
+  const [loadingPrompts, setLoadingPrompts] = useState(true);
+  const [editingPrompt, setEditingPrompt] = useState(null);
+  const [savingPrompt, setSavingPrompt] = useState(false);
+  const [defaultWritingRules, setDefaultWritingRules] = useState('');
+
+  useEffect(() => {
+    async function loadPrompts() {
+      const { data } = await supabase.from('email_prompts').select('*').eq('owner_id', user.id).order('created_at', { ascending: false });
+      setMyPrompts(data || []);
+      setLoadingPrompts(false);
+    }
+    loadPrompts();
+  }, [user]);
+
+  async function fetchDefaultWritingRules() {
+    const { data } = await supabase.functions.invoke('generate-email', { body: { action: 'get_default_writing_rules' } });
+    return data?.writingRulesBlock || '';
+  }
+
+  async function openNewPrompt() {
+    const def = await fetchDefaultWritingRules();
+    setDefaultWritingRules(def);
+    setEditingPrompt({ id: null, name: '', prompt_text: def, visibility: 'private' });
+  }
+
+  function openEditPrompt(p) {
+    setEditingPrompt({ id: p.id, name: p.name, prompt_text: p.prompt_text, visibility: p.visibility });
+  }
+
+  async function resetPromptToDefault() {
+    const def = defaultWritingRules || await fetchDefaultWritingRules();
+    setDefaultWritingRules(def);
+    setEditingPrompt(ep => ep ? { ...ep, prompt_text: def } : ep);
+  }
+
+  async function savePromptRow() {
+    if (!editingPrompt?.name?.trim() || !editingPrompt?.prompt_text?.trim()) {
+      toast.error('Give the prompt a name and some content before saving.');
+      return;
+    }
+    setSavingPrompt(true);
+    const payload = {
+      owner_id: user.id,
+      name: editingPrompt.name.trim(),
+      prompt_text: editingPrompt.prompt_text.trim(),
+      visibility: editingPrompt.visibility,
+    };
+    let error;
+    if (editingPrompt.id) {
+      ({ error } = await supabase.from('email_prompts').update(payload).eq('id', editingPrompt.id));
+    } else {
+      ({ error } = await supabase.from('email_prompts').insert(payload));
+    }
+    setSavingPrompt(false);
+    if (error) { toast.error('Could not save prompt: ' + error.message); return; }
+    toast.success('Writing prompt saved.');
+    setEditingPrompt(null);
+    const { data } = await supabase.from('email_prompts').select('*').eq('owner_id', user.id).order('created_at', { ascending: false });
+    setMyPrompts(data || []);
+  }
+
+  async function deletePromptRow(id) {
+    const { error } = await supabase.from('email_prompts').delete().eq('id', id);
+    if (error) { toast.error('Could not delete prompt: ' + error.message); return; }
+    setMyPrompts(ps => ps.filter(p => p.id !== id));
+    toast.success('Prompt deleted.');
+  }
+
+  async function togglePromptVisibility(p) {
+    const nextVis = p.visibility === 'org' ? 'private' : 'org';
+    const { error } = await supabase.from('email_prompts').update({ visibility: nextVis }).eq('id', p.id);
+    if (error) { toast.error('Could not update sharing: ' + error.message); return; }
+    setMyPrompts(ps => ps.map(x => x.id === p.id ? { ...x, visibility: nextVis } : x));
+  }
+
   return (
     <div style={{ padding: 24 }}>
       <div style={{ marginBottom: 24 }}>
@@ -146,6 +224,91 @@ export default function Settings() {
               {apolloSaving ? 'Saving…' : 'Save Apollo key'}
             </button>
             {apolloSaved && <div style={{ marginTop: 12, fontSize: 13, color: apolloSaved.startsWith('Error') ? '#dc2626' : '#059669' }}>{apolloSaved}</div>}
+          </>
+        )}
+      </div>
+
+      {/* My Writing Prompts */}
+      <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 20, maxWidth: 560, marginTop: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#111', marginBottom: 6 }}>My Writing Prompts</div>
+        <p style={{ fontSize: 13, color: '#888', marginBottom: 16, lineHeight: 1.6 }}>
+          Save your own version of the writing-style rules used for AI-generated emails.
+          Pick which one to use from the Follow-ups page -- selecting "Default" always uses
+          the current house style, even if you've saved your own.
+        </p>
+
+        {editingPrompt ? (
+          <div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>Name</label>
+              <input value={editingPrompt.name} onChange={e => setEditingPrompt(ep => ({ ...ep, name: e.target.value }))}
+                placeholder="e.g. Casual tone" style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none' }} />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <label style={{ fontSize: 12, color: '#666' }}>Writing rules</label>
+                <button onClick={resetPromptToDefault}
+                  style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#2563eb', cursor: 'pointer' }}>
+                  Reset to default text
+                </button>
+              </div>
+              <textarea value={editingPrompt.prompt_text} onChange={e => setEditingPrompt(ep => ({ ...ep, prompt_text: e.target.value }))}
+                rows={14} style={{ width: '100%', fontSize: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #e0e0e0', fontFamily: 'monospace', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }} />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151', marginBottom: 16, cursor: 'pointer' }}>
+              <input type="checkbox" checked={editingPrompt.visibility === 'org'}
+                onChange={e => setEditingPrompt(ep => ({ ...ep, visibility: e.target.checked ? 'org' : 'private' }))} />
+              Share with the team (visible to everyone, not just you)
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={savePromptRow} disabled={savingPrompt}
+                style={{ padding: '9px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', opacity: savingPrompt ? 0.7 : 1 }}>
+                {savingPrompt ? 'Saving…' : 'Save prompt'}
+              </button>
+              <button onClick={() => setEditingPrompt(null)}
+                style={{ padding: '9px 16px', background: '#f5f5f5', color: '#555', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {loadingPrompts ? (
+              <div style={{ color: '#aaa' }}>Loading…</div>
+            ) : myPrompts.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#999', marginBottom: 14 }}>You haven't saved any writing prompts yet.</div>
+            ) : (
+              <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
+                {myPrompts.map(p => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderRadius: 8, border: '1px solid #eee', background: '#fafafa' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 13, color: '#111', fontWeight: 500 }}>{p.name}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: p.visibility === 'org' ? '#dcfce7' : '#f1f5f9', color: p.visibility === 'org' ? '#166534' : '#64748b' }}>
+                        {p.visibility === 'org' ? 'Shared' : 'Private'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => togglePromptVisibility(p)}
+                        style={{ fontSize: 11, padding: '4px 9px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#555', cursor: 'pointer' }}>
+                        {p.visibility === 'org' ? 'Unshare' : 'Share'}
+                      </button>
+                      <button onClick={() => openEditPrompt(p)}
+                        style={{ fontSize: 11, padding: '4px 9px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#555', cursor: 'pointer' }}>
+                        Edit
+                      </button>
+                      <button onClick={() => deletePromptRow(p.id)}
+                        style={{ fontSize: 11, padding: '4px 9px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fff', color: '#dc2626', cursor: 'pointer' }}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={openNewPrompt}
+              style={{ padding: '8px 18px', background: '#fff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+              + New writing prompt
+            </button>
           </>
         )}
       </div>
