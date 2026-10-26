@@ -9,6 +9,7 @@ export default function DirectorDashboard() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [activity, setActivity] = useState([]);
   const [teamIds, setTeamIds] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
 
   useEffect(() => {
     async function load() {
@@ -35,6 +36,7 @@ export default function DirectorDashboard() {
       // Leaderboard: owners only, ranked by replies
       const sdrs = (allHierarchy || []).filter(h => h.role === 'owner');
       setTeamIds(sdrs.map(s => s.user_id));
+      setTeamMembers(sdrs.map(s => ({ id: s.user_id, name: s.full_name })));
       const board = sdrs.map(s => {
         const sc = c.filter(x => x.owner_id === s.user_id);
         const active = sc.filter(x => !x.bounced).length;
@@ -65,7 +67,7 @@ export default function DirectorDashboard() {
         <p style={{ fontSize: 13, color: '#888', margin: '3px 0 0' }}>{profile?.full_name} · Admin · All teams</p>
       </div>
 
-      <EmailMetricsPanel ownIds={[user.id]} teamIds={teamIds} showToggle defaultView="team" />
+      <EmailMetricsPanel ownIds={[user.id]} teamMembers={teamMembers} showToggle defaultView="team" />
 
       {/* Stats grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 20 }}>
