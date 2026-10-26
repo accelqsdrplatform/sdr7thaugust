@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { logEmailResponse } from './emailResponses';
 
 /**
  * Single source of truth for marking a contact as bounced.
@@ -24,4 +25,5 @@ export async function markContactBounced(contactId, actorId, reason) {
     activity_type: 'bounce_detected',
     details: reason ? { reason } : {},
   });
+  await logEmailResponse(contactId, actorId, 'bounce', bounced_at);
 }
