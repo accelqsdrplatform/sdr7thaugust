@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import EmailMetricsPanel from './EmailMetricsPanel';
 
 export default function POCDashboard() {
   const { user, profile } = useAuth();
   const [team, setTeam] = useState([]);
   const [teamStats, setTeamStats] = useState({ contacts: 0, emails: 0, replies: 0, meetings: 0, bounced: 0 });
   const [activity, setActivity] = useState([]);
+  const [teamIds, setTeamIds] = useState([]);
 
   useEffect(() => {
     async function load() {
       const { data: subs } = await supabase.rpc('get_subordinate_ids', { manager_user_id: user.id });
       const subIds = [user.id, ...(subs || []).map(s => s.user_id)];
+      setTeamIds(subIds);
 
       const { data: hierarchy } = await supabase.from('org_hierarchy').select('*').in('user_id', subIds);
       const allContacts=[]; {let _o=0; for(;;){const{data:_d}=await supabase.from('contacts').select('*').in('owner_id',subIds).range(_o,_o+999); if(!_d?.length)break; allContacts.push(..._d); if(_d.length<1000)break; _o+=1000;}}
@@ -48,6 +51,8 @@ export default function POCDashboard() {
         <h1 style={{ fontSize: 20, fontWeight: 600, color: '#111', margin: 0 }}>Team dashboard</h1>
         <p style={{ fontSize: 13, color: '#888', margin: '3px 0 0' }}>{profile?.full_name} · {profile?.region}</p>
       </div>
+
+      <EmailMetricsPanel ownIds={[user.id]} teamIds={teamIds} showToggle defaultView="team" />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
         {[
