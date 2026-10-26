@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import EmailMetricsPanel from './EmailMetricsPanel';
 
 const STAGES = ['Fresh','F1','F2','F3','F4','F5'];
 const STAGE_COLORS = {
@@ -68,6 +69,8 @@ export default function SDRDashboard() {
         </h1>
         <p style={{ fontSize: 13, color: '#888', margin: '3px 0 0' }}>Your outreach summary</p>
       </div>
+
+      <EmailMetricsPanel ownIds={[user.id]} />
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
