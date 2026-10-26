@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import EmailMetricsPanel from './EmailMetricsPanel';
 
 export default function ManagerDashboard() {
   const { user, profile } = useAuth();
@@ -8,11 +9,13 @@ export default function ManagerDashboard() {
   const [teams, setTeams] = useState([]);
   const [activity, setActivity] = useState([]);
   const [topPerformer, setTopPerformer] = useState(null);
+  const [teamIds, setTeamIds] = useState([]);
 
   useEffect(() => {
     async function load() {
       const { data: subs } = await supabase.rpc('get_subordinate_ids', { manager_user_id: user.id });
       const subIds = [user.id, ...(subs || []).map(s => s.user_id)];
+      setTeamIds(subIds);
 
       const [{ data: hierarchy }, { data: allContacts }, { data: acts }] = await Promise.all([
         supabase.from('org_hierarchy').select('*').in('user_id', subIds),
@@ -71,6 +74,8 @@ export default function ManagerDashboard() {
         <h1 style={{ fontSize: 20, fontWeight: 600, color: '#111', margin: 0 }}>Sub-Admin dashboard</h1>
         <p style={{ fontSize: 13, color: '#888', margin: '3px 0 0' }}>{profile?.full_name} · {profile?.region}</p>
       </div>
+
+      <EmailMetricsPanel ownIds={[user.id]} teamIds={teamIds} showToggle defaultView="team" />
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
