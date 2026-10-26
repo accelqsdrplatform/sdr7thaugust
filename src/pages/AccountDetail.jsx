@@ -58,6 +58,7 @@ export default function AccountDetail() {
   const [allAccountNames, setAllAccountNames] = useState([]);
   const [showAllSimilar, setShowAllSimilar] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [emailsSentCount, setEmailsSentCount] = useState(0);
 
   useEffect(() => { fetchAll(); }, [id]);
 
@@ -96,6 +97,13 @@ export default function AccountDetail() {
     setEditData(acc || {});
     setContacts(cts || []);
     setIntents(ints || []);
+    const ctIds = (cts || []).map(c => c.id);
+    if (ctIds.length > 0) {
+      const { count } = await supabase.from('emails').select('id', { count: 'exact', head: true }).in('contact_id', ctIds);
+      setEmailsSentCount(count || 0);
+    } else {
+      setEmailsSentCount(0);
+    }
     setAllAccountNames((allAccs || []).map(a => a.name.toLowerCase().trim()));
     if (acc?.name) {
       await fetchCompanyNotes(acc.name);
@@ -332,6 +340,10 @@ export default function AccountDetail() {
             <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e8e4', padding: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 13, color: '#888' }}>Contacts</span>
               <span style={{ fontSize: 24, fontWeight: 700, color: '#2563eb' }}>{contacts.length}</span>
+            </div>
+            <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e8e4', padding: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: '#888' }}>Emails Sent</span>
+              <span style={{ fontSize: 24, fontWeight: 700, color: '#059669' }}>{emailsSentCount}</span>
             </div>
             <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e8e4', padding: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 13, color: '#888' }}>Intent Signals</span>
