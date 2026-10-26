@@ -51,7 +51,8 @@ function StatCard({ label, value, sub, color }) {
 // custom), scoped to either the viewer's own book or their whole team.
 // Shared across SDR/POC/Manager/Director dashboards so the range picker and
 // metric definitions stay identical everywhere they appear.
-export default function EmailMetricsPanel({ ownIds, teamIds, showToggle, defaultView }) {
+export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, defaultView }) {
+  const teamIds = (teamMembers || []).map(m => m.id);
   const [range, setRange] = useState(7);
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -61,10 +62,13 @@ export default function EmailMetricsPanel({ ownIds, teamIds, showToggle, default
   const [loading, setLoading] = useState(true);
   const [pipelineCounts, setPipelineCounts] = useState({});
   const [responseCounts, setResponseCounts] = useState({});
+  const [selectedMemberId, setSelectedMemberId] = useState('');
 
-  const scopeIds = (showToggle && viewMode === 'team' && teamIds && teamIds.length) ? teamIds : ownIds;
+  const scopeIds = (showToggle && viewMode === 'team')
+    ? (selectedMemberId ? [selectedMemberId] : (teamIds && teamIds.length ? teamIds : ownIds))
+    : ownIds;
 
-  useEffect(() => { load(); }, [range, customFrom, customTo, viewMode, JSON.stringify(ownIds), JSON.stringify(teamIds)]);
+  useEffect(() => { load(); }, [range, customFrom, customTo, viewMode, selectedMemberId, JSON.stringify(ownIds), JSON.stringify(teamIds)]);
 
   async function load() {
     setLoading(true);
@@ -111,7 +115,7 @@ export default function EmailMetricsPanel({ ownIds, teamIds, showToggle, default
           {showToggle && teamIds && teamIds.length > 0 && (
             <div style={{ display: 'flex', gap: 4, background: '#f5f5f3', borderRadius: 8, padding: 3 }}>
               {['my', 'team'].map(m => (
-                <button key={m} onClick={() => setViewMode(m)}
+                <button key={m} onClick={() => { setViewMode(m); if (m === 'my') setSelectedMemberId(''); }}
                   style={{ padding: '5px 12px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 500, cursor: 'pointer',
                     background: viewMode === m ? '#fff' : 'transparent', color: viewMode === m ? '#111' : '#888',
                     boxShadow: viewMode === m ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
@@ -119,6 +123,15 @@ export default function EmailMetricsPanel({ ownIds, teamIds, showToggle, default
                 </button>
               ))}
             </div>
+          )}
+          {showToggle && viewMode === 'team' && teamMembers && teamMembers.length > 0 && (
+            <select value={selectedMemberId} onChange={e => setSelectedMemberId(e.target.value)}
+              style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '0.5px solid #e8e8e4', color: '#333', background: '#fff' }}>
+              <option value="">All team members</option>
+              {teamMembers.map(m => (
+                <option key={m.id} value={m.id}>{m.name || 'Unnamed'}</option>
+              ))}
+            </select>
           )}
           <div style={{ display: 'flex', gap: 4, background: '#f5f5f3', borderRadius: 8, padding: 3 }}>
             {RANGE_OPTIONS.map(o => (
