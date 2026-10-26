@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { normalizeIndustry } from '../constants/industryAliases';
 
 const STATUSES = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'won', 'lost', 'bounced', 'unsubscribed'];
+const FILTER_STATUSES = STATUSES.filter(s => s !== 'won' && s !== 'lost');
 
 const STATUS_STYLE = {
   Fresh:        { bg: '#e0f2fe', color: '#0369a1' },
@@ -694,7 +695,7 @@ export default function Contacts() {
           style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 13, width: 240, outline: 'none' }}
         />
         <div style={{ display: 'flex', gap: 2, background: '#f0f0ee', padding: 4, borderRadius: 8, flexWrap: 'wrap' }}>
-          {['all', ...STATUSES].map(s => (
+          {['all', ...FILTER_STATUSES].map(s => (
             <button key={s} onClick={() => setFilter(s)}
               style={{ padding: '5px 11px', borderRadius: 6, border: 'none', fontSize: 12, cursor: 'pointer',
                 background: filter === s ? '#fff' : 'transparent',
