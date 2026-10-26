@@ -441,6 +441,7 @@ export default function FollowUps() {
       subject: applyMergeFields(currentStepObj?.subject, contact, account),
       body: applyMergeFields(currentStepObj?.body, contact, account),
       direction:'outbound', sent_at:now,
+      source_type:'template', source_id:ta.template_id,
     });
     setMarkingSent(null);
     fetchData();
