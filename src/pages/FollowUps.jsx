@@ -368,12 +368,23 @@ export default function FollowUps() {
       actor_id:user.id, contact_id:contact.id, activity_type:'email_sent',
       details:{from_stage:contact.status,to_stage:next,subject:draft?.subject||'',body:draft?.body||''},
     });
+    const emailSource = await getEmailSource(contact);
     await supabase.from('emails').insert({
       contact_id:contact.id, owner_id:user.id, stage:contact.status,
       subject:draft?.subject||'', body:draft?.body||'', direction:'outbound', sent_at:now,
+      source_type:emailSource.source_type, source_id:emailSource.source_id,
     });
     setDrafts(d=>{const nd={...d};delete nd[contact.id];return nd;});
     setDraftOpen(o=>o===contact.id?null:o);
+  }
+
+  async function getEmailSource(contact){
+    try{
+      const { data: ta } = await supabase.from('template_assignments').select('template_id').eq('contact_id',contact.id).neq('status','completed').order('created_at',{ascending:false}).limit(1).maybeSingle();
+      if(ta?.template_id) return { source_type:'template', source_id:ta.template_id };
+    }catch(e){}
+    if(selectedStyleId) return { source_type:'custom_style', source_id:selectedStyleId };
+    return { source_type:'ai_default', source_id:null };
   }
 
   async function markSent(contact){
