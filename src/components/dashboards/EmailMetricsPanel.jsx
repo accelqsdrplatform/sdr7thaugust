@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
+const STAGE_ORDER = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'bounced', 'unsubscribed'];
+const STAGE_COLORS = { Fresh: '#3b82f6', F1: '#10b981', F2: '#059669', F3: '#f59e0b', F4: '#ef4444', F5: '#dc2626', bounced: '#991b1b', unsubscribed: '#92400e' };
+const RESPONSE_ORDER = ['prospect', 'warm', 'cold', 'not_interested', 'negative'];
+const RESPONSE_LABELS = { prospect: 'Prospect', warm: 'Warm', cold: 'Cold', not_interested: 'Not Interested', negative: 'Negative' };
+const RESPONSE_COLORS = { prospect: '#059669', warm: '#d97706', cold: '#0369a1', not_interested: '#6b7280', negative: '#dc2626' };
+
 const RANGE_OPTIONS = [
   { key: 'today', label: 'Today' },
   { key: 'yesterday', label: 'Yesterday' },
@@ -53,6 +59,8 @@ export default function EmailMetricsPanel({ ownIds, teamIds, showToggle, default
   const [viewMode, setViewMode] = useState(defaultView || 'my');
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [pipelineCounts, setPipelineCounts] = useState({});
+  const [responseCounts, setResponseCounts] = useState({});
 
   const scopeIds = (showToggle && viewMode === 'team' && teamIds && teamIds.length) ? teamIds : ownIds;
 
@@ -79,6 +87,19 @@ export default function EmailMetricsPanel({ ownIds, teamIds, showToggle, default
     }
 
     setStats({ emailsSent: emailsSent || 0, responses: responses || 0, contactsAdded: contactsAdded || 0, accountsAdded });
+
+    // Snapshot distribution of the scoped book right now -- not date-ranged,
+    // since stage/response_type are current-state fields, not dated events.
+    const { data: bookContacts } = await supabase.from('contacts').select('status, response_type').in('owner_id', ids);
+    const pc = {};
+    STAGE_ORDER.forEach(s => { pc[s] = 0; });
+    (bookContacts || []).forEach(c => { if (STAGE_ORDER.includes(c.status)) pc[c.status] = (pc[c.status] || 0) + 1; });
+    setPipelineCounts(pc);
+    const rc = {};
+    RESPONSE_ORDER.forEach(r => { rc[r] = 0; });
+    (bookContacts || []).forEach(c => { if (c.response_type && RESPONSE_ORDER.includes(c.response_type)) rc[c.response_type] = (rc[c.response_type] || 0) + 1; });
+    setResponseCounts(rc);
+
     setLoading(false);
   }
 
@@ -141,6 +162,30 @@ export default function EmailMetricsPanel({ ownIds, teamIds, showToggle, default
           <StatCard label="Accounts added" value={stats.accountsAdded} color="#d97706" />
         </div>
       )}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 16, paddingTop: 16, borderTop: '0.5px solid #f0f0ee' }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pipeline by stage</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {STAGE_ORDER.map(s => (
+              <div key={s} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
+                <span style={{ color: '#555' }}>{s}</span>
+                <span style={{ fontWeight: 700, color: STAGE_COLORS[s] }}>{pipelineCounts[s] || 0}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Responses by type</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {RESPONSE_ORDER.map(r => (
+              <div key={r} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
+                <span style={{ color: '#555' }}>{RESPONSE_LABELS[r]}</span>
+                <span style={{ fontWeight: 700, color: RESPONSE_COLORS[r] }}>{responseCounts[r] || 0}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
