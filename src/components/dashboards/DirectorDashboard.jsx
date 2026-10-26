@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import EmailMetricsPanel from './EmailMetricsPanel';
 
 export default function DirectorDashboard() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const [stats, setStats] = useState({ total: 0, contacted: 0, replies: 0, meetings: 0, won: 0, bounced: 0 });
   const [leaderboard, setLeaderboard] = useState([]);
   const [activity, setActivity] = useState([]);
+  const [teamIds, setTeamIds] = useState([]);
 
   useEffect(() => {
     async function load() {
@@ -32,6 +34,7 @@ export default function DirectorDashboard() {
 
       // Leaderboard: owners only, ranked by replies
       const sdrs = (allHierarchy || []).filter(h => h.role === 'owner');
+      setTeamIds(sdrs.map(s => s.user_id));
       const board = sdrs.map(s => {
         const sc = c.filter(x => x.owner_id === s.user_id);
         const active = sc.filter(x => !x.bounced).length;
@@ -61,6 +64,8 @@ export default function DirectorDashboard() {
         <h1 style={{ fontSize: 20, fontWeight: 600, color: '#111', margin: 0 }}>Org overview</h1>
         <p style={{ fontSize: 13, color: '#888', margin: '3px 0 0' }}>{profile?.full_name} · Admin · All teams</p>
       </div>
+
+      <EmailMetricsPanel ownIds={[user.id]} teamIds={teamIds} showToggle defaultView="team" />
 
       {/* Stats grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 20 }}>
