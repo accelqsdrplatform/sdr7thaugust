@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 
 const ROLE_LABELS = { owner: 'Owner', 'sub-admin': 'Sub-admin', admin: 'Admin' };
 const DAY_OPTIONS = [7, 14, 30, 90];
+const SOURCE_LABELS = { ai_default: 'AI (default)', custom_style: 'AI (your writing style)', template: 'Template', manual: 'Manual log', legacy_untracked: 'Before tracking' };
 
 async function callFn(body) {
   const { data, error } = await supabase.functions.invoke('owner-scorecard', { body });
@@ -279,6 +280,60 @@ export default function Scorecard() {
           )}
         </Card>
       </div>
+
+      {/* Email performance */}
+      <Card title="Email performance" subtitle="Sent vs. responses, by stage and by writing source, for the selected range" style={{ marginBottom: 16 }}>
+        {(data.email_performance && (data.email_performance.by_stage.length > 0 || data.email_performance.by_source.length > 0)) ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 600, color: '#888', marginBottom: 8 }}>By stage</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: '#999', fontSize: 11 }}>
+                    <th style={{ paddingBottom: 8, fontWeight: 500 }}>Stage</th>
+                    <th style={{ paddingBottom: 8, fontWeight: 500, textAlign: 'right' }}>Sent</th>
+                    <th style={{ paddingBottom: 8, fontWeight: 500, textAlign: 'right' }}>Responses</th>
+                    <th style={{ paddingBottom: 8, fontWeight: 500, textAlign: 'right' }}>Reply rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.email_performance.by_stage.map(row => (
+                    <tr key={row.key} style={{ borderTop: '0.5px solid #f0f0ed' }}>
+                      <td style={{ padding: '8px 0', color: '#333' }}>{row.key}</td>
+                      <td style={{ padding: '8px 0', textAlign: 'right', color: '#888' }}>{row.sent}</td>
+                      <td style={{ padding: '8px 0', textAlign: 'right', color: '#333' }}>{row.responses}</td>
+                      <td style={{ padding: '8px 0', textAlign: 'right', fontWeight: 600, color: '#111' }}>{row.reply_rate}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 600, color: '#888', marginBottom: 8 }}>By writing source</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: '#999', fontSize: 11 }}>
+                    <th style={{ paddingBottom: 8, fontWeight: 500 }}>Source</th>
+                    <th style={{ paddingBottom: 8, fontWeight: 500, textAlign: 'right' }}>Sent</th>
+                    <th style={{ paddingBottom: 8, fontWeight: 500, textAlign: 'right' }}>Responses</th>
+                    <th style={{ paddingBottom: 8, fontWeight: 500, textAlign: 'right' }}>Reply rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.email_performance.by_source.map(row => (
+                    <tr key={row.key} style={{ borderTop: '0.5px solid #f0f0ed' }}>
+                      <td style={{ padding: '8px 0', color: '#333' }}>{SOURCE_LABELS[row.key] || row.key}</td>
+                      <td style={{ padding: '8px 0', textAlign: 'right', color: '#888' }}>{row.sent}</td>
+                      <td style={{ padding: '8px 0', textAlign: 'right', color: '#333' }}>{row.responses}</td>
+                      <td style={{ padding: '8px 0', textAlign: 'right', fontWeight: 600, color: '#111' }}>{row.reply_rate}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : <Empty>No emails sent in this range yet.</Empty>}
+      </Card>
 
       {/* Messaging effectiveness */}
       <Card title="Messaging effectiveness" subtitle="Reply rate by persona × pitch, vs. org average for the same combo" style={{ marginBottom: 16 }}>
