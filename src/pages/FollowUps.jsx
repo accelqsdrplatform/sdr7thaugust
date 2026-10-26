@@ -155,9 +155,24 @@ export default function FollowUps() {
   const [bulkMarking,    setBulkMarking]    = useState(false);
   const [customPrompts, setCustomPrompts] = useState({});
   const [templateAssignments, setTemplateAssignments] = useState({});
+  const [writingStyles, setWritingStyles] = useState([]);
+  const [selectedStyleId, setSelectedStyleId] = useState(() => localStorage.getItem('sdr_writing_style_id') || '');
   const autoGenRanRef = useRef(false);
 
   useEffect(() => { fetchData(); }, [viewAll]);
+
+  useEffect(() => {
+    async function loadWritingStyles() {
+      const { data } = await supabase.from('email_prompts').select('*').or(`owner_id.eq.${user.id},visibility.eq.org`).order('name');
+      setWritingStyles(data || []);
+    }
+    loadWritingStyles();
+  }, [user]);
+
+  function changeWritingStyle(id) {
+    setSelectedStyleId(id);
+    localStorage.setItem('sdr_writing_style_id', id);
+  }
 
   // Soft warning only — the platform can't block sending (it happens in the
   // rep's own mail client), so this just flags mailboxes that have already
@@ -315,6 +330,7 @@ export default function FollowUps() {
           contact_note:contactNoteMap[contact.id]||contact.notes||'',
         },
         stage:emailStage, customPrompt:customPrompt||null,
+        customWritingRules:(writingStyles.find(w=>w.id===selectedStyleId)?.prompt_text)||null,
         accountResearch:{...(account.research||{}), testing_tools:account.testing_tools||[], enterprise_apps:account.enterprise_apps||[], saas_apps:account.saas_apps||[], employees:account.employee_count||null, revenue:account.revenue_millions?('$'+account.revenue_millions+'M'):null}, accountNote:companyNoteMap[contact.company]||account.notes||'',
         senderName, priorEmails,
       }});
@@ -650,6 +666,17 @@ export default function FollowUps() {
                   </div>
                   <div style={{fontSize:13,fontWeight:600,color:autoGenerate?'#2563eb':'#6b7280'}}>{autoGenerate?'On':'Off'}</div>
                 </div>
+              </div>
+              <div style={{width:1,background:'#e5e7eb',alignSelf:'stretch',flexShrink:0}}/>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:'#374151',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.06em'}}>Writing style</div>
+                <select value={selectedStyleId} onChange={e=>changeWritingStyle(e.target.value)}
+                  style={{padding:'6px 10px',borderRadius:7,border:'1px solid #d1d5db',fontSize:12,color:'#374151',background:'#fff',cursor:'pointer',maxWidth:180}}>
+                  <option value="">Default</option>
+                  {writingStyles.map(w=>(
+                    <option key={w.id} value={w.id}>{w.name}{w.owner_id!==user.id?' (shared)':''}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
