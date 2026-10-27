@@ -64,6 +64,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
   const [responseCounts, setResponseCounts] = useState({});
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [dailyEmails, setDailyEmails] = useState([]);
+  const [dailyStageCols, setDailyStageCols] = useState([]);
 
   const scopeIds = (showToggle && viewMode === 'team')
     ? (selectedMemberId ? [selectedMemberId] : (teamIds && teamIds.length ? teamIds : ownIds))
@@ -105,15 +106,27 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
     (bookContacts || []).forEach(c => { if (c.response_type && RESPONSE_ORDER.includes(c.response_type)) rc[c.response_type] = (rc[c.response_type] || 0) + 1; });
     setResponseCounts(rc);
 
-    // Day-by-day breakdown of emails sent within the selected range.
-    const { data: dailyRows } = await supabase.from('emails').select('sent_at').in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso);
-    const dayMap = {};
+    // Day-by-day breakdown of emails sent within the selected range, split
+    // by the stage the contact was in when each email went out -- new stage
+    // columns appear automatically as they show up in the data.
+    const { data: dailyRows } = await supabase.from('emails').select('sent_at, stage').in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso);
+    const dayStageMap = {};
+    const stagesSeen = new Set();
     (dailyRows || []).forEach(r => {
       const d = new Date(r.sent_at);
       const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-      dayMap[key] = (dayMap[key] || 0) + 1;
+      const stg = r.stage || 'Unknown';
+      stagesSeen.add(stg);
+      if (!dayStageMap[key]) dayStageMap[key] = {};
+      dayStageMap[key][stg] = (dayStageMap[key][stg] || 0) + 1;
     });
-    setDailyEmails(Object.keys(dayMap).sort().map(k => ({ date: k, count: dayMap[k] })));
+    const stageCols = STAGE_ORDER.filter(s => stagesSeen.has(s)).concat([...stagesSeen].filter(s => !STAGE_ORDER.includes(s)));
+    setDailyStageCols(stageCols);
+    setDailyEmails(Object.keys(dayStageMap).sort().map(k => {
+      const counts = dayStageMap[k];
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      return { date: k, counts, total };
+    }));
 
     setLoading(false);
   }
@@ -210,25 +223,35 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
           </div>
         </div>
       </div>
-      {dailyEmails.length > 0 && (() => {
-        const maxDaily = Math.max(...dailyEmails.map(x => x.count), 1);
-        return (
-          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '0.5px solid #f0f0ee' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Emails sent by day</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
-              {dailyEmails.map(d => (
-                <div key={d.date} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
-                  <span style={{ width: 86, color: '#555', flexShrink: 0 }}>{new Date(d.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-                  <div style={{ flex: 1, height: 8, background: '#f0f0ee', borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${(d.count / maxDaily) * 100}%`, background: '#2563eb', borderRadius: 4 }} />
-                  </div>
-                  <span style={{ width: 28, textAlign: 'right', fontWeight: 700, color: '#2563eb' }}>{d.count}</span>
-                </div>
-              ))}
-            </div>
+      {dailyEmails.length > 0 && (
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '0.5px solid #f0f0ee' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Emails sent by day</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ borderBottom: '0.5px solid #f0f0ee' }}>
+                  <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#999', fontWeight: 500 }}>Date</th>
+                  {dailyStageCols.map(s => (
+                    <th key={s} style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#999', fontWeight: 500 }}>{s}</th>
+                  ))}
+                  <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#999', fontWeight: 600 }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyEmails.map(d => (
+                  <tr key={d.date} style={{ borderBottom: '0.5px solid #f5f5f3' }}>
+                    <td style={{ padding: '6px 10px', color: '#555', whiteSpace: 'nowrap' }}>{new Date(d.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</td>
+                    {dailyStageCols.map(s => (
+                      <td key={s} style={{ padding: '6px 10px', textAlign: 'right', color: STAGE_COLORS[s] || '#555' }}>{d.counts[s] || 0}</td>
+                    ))}
+                    <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: '#2563eb' }}>{d.total}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        );
-      })()}
+        </div>
+      )}
     </div>
   );
 }
