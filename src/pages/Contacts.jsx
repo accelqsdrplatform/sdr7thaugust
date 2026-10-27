@@ -1822,11 +1822,15 @@ function UploadCSV({ userId, onDone }) {
       // now-enforced unique constraint if this owner already has the account.
       const { data: created, error: createErr } = await supabase.from('accounts').upsert(toCreate, { onConflict: 'owner_id,name' }).select('id, name');
       if (createErr) {
-        // Don't fail the whole import silently — contacts below would still
-        // go through with no account link, which is exactly the bug this
-        // guards against. Surface it so the rep knows to retry/fix the data.
+        // Stop here rather than importing contacts with no account link --
+        // that silent half-success is exactly what caused the confusion
+        // before. Tell the rep plainly what broke and which companies were
+        // affected so they can fix the CSV and re-upload.
         console.error('Account creation failed:', createErr);
-        setMsg('Some accounts could not be created (' + createErr.message + '). Contacts will still import.');
+        const badNames = toCreate.map(c => c.name).join(', ');
+        setMsg(`Import stopped: couldn't create account(s) for ${badNames} — ${createErr.message}. Fix that data in your CSV and re-upload; nothing was imported.`);
+        setStep('idle');
+        return;
       }
       createdAccounts = created || [];
     }
