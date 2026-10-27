@@ -63,6 +63,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
   const [pipelineCounts, setPipelineCounts] = useState({});
   const [responseCounts, setResponseCounts] = useState({});
   const [selectedMemberId, setSelectedMemberId] = useState('');
+  const [dailyEmails, setDailyEmails] = useState([]);
 
   const scopeIds = (showToggle && viewMode === 'team')
     ? (selectedMemberId ? [selectedMemberId] : (teamIds && teamIds.length ? teamIds : ownIds))
@@ -103,6 +104,16 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
     RESPONSE_ORDER.forEach(r => { rc[r] = 0; });
     (bookContacts || []).forEach(c => { if (c.response_type && RESPONSE_ORDER.includes(c.response_type)) rc[c.response_type] = (rc[c.response_type] || 0) + 1; });
     setResponseCounts(rc);
+
+    // Day-by-day breakdown of emails sent within the selected range.
+    const { data: dailyRows } = await supabase.from('emails').select('sent_at').in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso);
+    const dayMap = {};
+    (dailyRows || []).forEach(r => {
+      const d = new Date(r.sent_at);
+      const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      dayMap[key] = (dayMap[key] || 0) + 1;
+    });
+    setDailyEmails(Object.keys(dayMap).sort().map(k => ({ date: k, count: dayMap[k] })));
 
     setLoading(false);
   }
@@ -199,6 +210,25 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
           </div>
         </div>
       </div>
+      {dailyEmails.length > 0 && (() => {
+        const maxDaily = Math.max(...dailyEmails.map(x => x.count), 1);
+        return (
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '0.5px solid #f0f0ee' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Emails sent by day</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
+              {dailyEmails.map(d => (
+                <div key={d.date} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
+                  <span style={{ width: 86, color: '#555', flexShrink: 0 }}>{new Date(d.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                  <div style={{ flex: 1, height: 8, background: '#f0f0ee', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${(d.count / maxDaily) * 100}%`, background: '#2563eb', borderRadius: 4 }} />
+                  </div>
+                  <span style={{ width: 28, textAlign: 'right', fontWeight: 700, color: '#2563eb' }}>{d.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
