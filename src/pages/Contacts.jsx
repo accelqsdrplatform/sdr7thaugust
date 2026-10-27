@@ -1780,6 +1780,17 @@ function UploadCSV({ userId, onDone }) {
     setTimeout(() => { setMsg(''); setStep('idle'); }, 4000);
   }
 
+  // "Below 500" style free-text revenue estimates (and anything else that
+  // isn't a clean number) used to reach the DB as-is and silently break the
+  // whole account-creation upsert below, since revenue_millions is a numeric
+  // column and Postgres rejects the ENTIRE batch on one bad value. Pull out
+  // any digits we can find; otherwise store nothing rather than fail.
+  function toNumericOrNull(v) {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(String(v).replace(/[^0-9.]/g, ''));
+    return Number.isFinite(n) && /\d/.test(String(v)) ? n : null;
+  }
+
   async function confirmAndImport() {
     setStep('importing');
     setMsg('Creating accounts…');
@@ -1796,12 +1807,12 @@ function UploadCSV({ userId, onDone }) {
         if ((companyChoice[c.name] || 'link') === 'link') {
           existingAccounts.push({ id: c.possibleMatch.id, name: c.name });
         } else {
-          toCreate.push({ name: c.name, owner_id: userId, industry: c.industry || null, country: c.country || null, website: c.website || null, revenue_millions: c.revenue_millions || null, employees: c.employees || null });
+          toCreate.push({ name: c.name, owner_id: userId, industry: c.industry || null, country: c.country || null, website: c.website || null, revenue_millions: toNumericOrNull(c.revenue_millions), employees: c.employees || null });
         }
         return;
       }
       if (selectedNew.has(c.name)) {
-        toCreate.push({ name: c.name, owner_id: userId, industry: c.industry || null, country: c.country || null, website: c.website || null, revenue_millions: c.revenue_millions || null, employees: c.employees || null });
+        toCreate.push({ name: c.name, owner_id: userId, industry: c.industry || null, country: c.country || null, website: c.website || null, revenue_millions: toNumericOrNull(c.revenue_millions), employees: c.employees || null });
       }
     });
 
@@ -1809,7 +1820,14 @@ function UploadCSV({ userId, onDone }) {
     if (toCreate.length > 0) {
       // Upsert on (owner_id, name): safe against races and against the
       // now-enforced unique constraint if this owner already has the account.
-      const { data: created } = await supabase.from('accounts').upsert(toCreate, { onConflict: 'owner_id,name' }).select('id, name');
+      const { data: created, error: createErr } = await supabase.from('accounts').upsert(toCreate, { onConflict: 'owner_id,name' }).select('id, name');
+      if (createErr) {
+        // Don't fail the whole import silently — contacts below would still
+        // go through with no account link, which is exactly the bug this
+        // guards against. Surface it so the rep knows to retry/fix the data.
+        console.error('Account creation failed:', createErr);
+        setMsg('Some accounts could not be created (' + createErr.message + '). Contacts will still import.');
+      }
       createdAccounts = created || [];
     }
 
