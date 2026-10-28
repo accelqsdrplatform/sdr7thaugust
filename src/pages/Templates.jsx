@@ -60,6 +60,8 @@ export default function Templates() {
   const [approvals, setApprovals] = useState([]);
   const [ownerNames, setOwnerNames] = useState({});
   const [stats, setStats] = useState({});
+  const [allTemplates, setAllTemplates] = useState([]);
+  const [abResults, setAbResults] = useState({});
   const [loading, setLoading] = useState(true);
 
   const [fPlatform, setFPlatform] = useState([]);
@@ -100,24 +102,54 @@ export default function Templates() {
       setOwnerNames(map);
     }
 
+    setAllTemplates(allRows);
+
     const ids = allRows.map(r => r.id);
     if (ids.length > 0) {
       const { data: assigns } = await supabase.from('template_assignments').select('template_id, status, contact_id').in('template_id', ids);
       const contactIds = [...new Set((assigns || []).map(a => a.contact_id))];
       let contactMap = {};
       if (contactIds.length > 0) {
-        const { data: contactRows } = await supabase.from('contacts').select('id, response_state').in('id', contactIds);
-        (contactRows || []).forEach(c => { contactMap[c.id] = c.response_state; });
+        const { data: contactRows } = await supabase.from('contacts').select('id, response_state, response_type, status').in('id', contactIds);
+        (contactRows || []).forEach(c => { contactMap[c.id] = c; });
       }
       const statMap = {};
       ids.forEach(id => {
         const rows = (assigns || []).filter(a => a.template_id === id);
         const total = rows.length;
         const completed = rows.filter(a => a.status === 'completed').length;
-        const replied = rows.filter(a => contactMap[a.contact_id] === 'replied').length;
-        statMap[id] = { total, completed, replied };
+        const replied = rows.filter(a => contactMap[a.contact_id]?.response_state === 'replied').length;
+        const positive = rows.filter(a => ['warm', 'prospect'].includes(contactMap[a.contact_id]?.response_type)).length;
+        const advanced = rows.filter(a => contactMap[a.contact_id] && contactMap[a.contact_id].status !== 'Fresh').length;
+        statMap[id] = { total, completed, replied, positive, advanced };
       });
       setStats(statMap);
+
+      // A/B test roll-ups: group variants that share an ab_group_id and
+      // summarize each variant's performance side by side.
+      const groups = {};
+      allRows.forEach(t => {
+        if (t.ab_group_id) { (groups[t.ab_group_id] = groups[t.ab_group_id] || []).push(t); }
+      });
+      const abMap = {};
+      Object.entries(groups).forEach(([gid, variants]) => {
+        abMap[gid] = variants
+          .slice()
+          .sort((a, b) => (a.ab_label || '').localeCompare(b.ab_label || ''))
+          .map(v => {
+            const s = statMap[v.id] || { total: 0, completed: 0, replied: 0, positive: 0, advanced: 0 };
+            return {
+              id: v.id, label: v.ab_label, name: v.name, status: v.status,
+              assigned: s.total,
+              replyRate: s.total ? Math.round((s.replied / s.total) * 100) : null,
+              positiveRate: s.total ? Math.round((s.positive / s.total) * 100) : null,
+              advancedRate: s.total ? Math.round((s.advanced / s.total) * 100) : null,
+            };
+          });
+      });
+      setAbResults(abMap);
+    } else {
+      setAbResults({});
     }
 
     setLoading(false);
@@ -231,6 +263,52 @@ export default function Templates() {
     showToast('Added to My Templates - edit it freely, the original stays untouched');
   }
 
+  function nextAbLabel(existingLabels) {
+    const used = new Set(existingLabels);
+    for (let i = 0; i < 26; i++) {
+      const l = String.fromCharCode(65 + i);
+      if (!used.has(l)) return l;
+    }
+    return null;
+  }
+
+  async function cloneAsVariant(t, groupId, label) {
+    const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', t.id).order('step_number');
+    const baseName = (t.name || '').replace(/\s*\(Variant [A-Z]\)\s*$/, '');
+    const { data: inserted, error } = await supabase.from('templates').insert({
+      owner_id: user.id,
+      parent_template_id: t.parent_template_id || t.id,
+      name: baseName + ' (Variant ' + label + ')',
+      description: t.description,
+      platform_tags: t.platform_tags, persona_tags: t.persona_tags,
+      campaign_tags: t.campaign_tags, industry_tags: t.industry_tags,
+      step_count: (steps || []).length,
+      status: 'draft', visibility: t.visibility || 'private', version: 1,
+      ab_group_id: groupId, ab_label: label,
+    }).select().single();
+    if (error) { showToast(error.message, 'error'); return null; }
+    const stepRows = (steps || []).map(s => ({ template_id: inserted.id, step_number: s.step_number, subject: s.subject, body: s.body, delay_days: s.delay_days }));
+    if (stepRows.length > 0) await supabase.from('template_steps').insert(stepRows);
+    return inserted;
+  }
+
+  async function startAbTest(t) {
+    const groupId = crypto.randomUUID();
+    await supabase.from('templates').update({ ab_group_id: groupId, ab_label: 'A' }).eq('id', t.id);
+    await cloneAsVariant({ ...t, ab_group_id: groupId, ab_label: 'A' }, groupId, 'B');
+    await loadAll();
+    showToast('Started an A/B test - Variant A is this template, edit Variant B to make it different');
+  }
+
+  async function addAbVariant(t) {
+    const group = allTemplates.filter(x => x.ab_group_id === t.ab_group_id);
+    const label = nextAbLabel(group.map(x => x.ab_label));
+    if (!label) { showToast('Maximum of 26 variants (A-Z) reached', 'error'); return; }
+    await cloneAsVariant(t, t.ab_group_id, label);
+    await loadAll();
+    showToast('Added Variant ' + label + ' - edit it so it differs from the others');
+  }
+
   async function submitForApproval(t) {
     await supabase.from('templates').update({ status: 'pending_approval' }).eq('id', t.id);
     await loadAll();
@@ -270,6 +348,14 @@ export default function Templates() {
           <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a', flex: 1 }}>{t.name}</div>
           <StatusBadge status={t.status} />
         </div>
+        {t.ab_group_id && (() => {
+          const group = allTemplates.filter(x => x.ab_group_id === t.ab_group_id);
+          return (
+            <div style={{ fontSize: 10, color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ddd6fe', padding: '2px 8px', borderRadius: 20, fontWeight: 700, alignSelf: 'flex-start' }}>
+              🔀 Variant {t.ab_label} of {group.length}
+            </div>
+          );
+        })()}
         {t.description && <div style={{ fontSize: 12, color: '#64748b' }}>{t.description}</div>}
         <div style={{ fontSize: 11, color: '#94a3b8' }}>{t.step_count} step{t.step_count === 1 ? '' : 's'} - by {ownerNames[t.owner_id] || 'Unknown'} - v{t.version}</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -294,6 +380,12 @@ export default function Templates() {
           {context === 'mine' && (
             <>
               <button onClick={() => openEdit(t)} style={btnStyle('secondary')}>Edit</button>
+              {!t.ab_group_id && (
+                <button onClick={() => startAbTest(t)} style={btnStyle('secondary')}>🔀 A/B Test This</button>
+              )}
+              {t.ab_group_id && (
+                <button onClick={() => addAbVariant(t)} style={btnStyle('secondary')}>+ Add Variant</button>
+              )}
               {(t.status === 'draft' || t.status === 'rejected') && (
                 <button onClick={() => submitForApproval(t)} style={btnStyle('primary')}>Submit for Approval</button>
               )}
@@ -366,6 +458,41 @@ export default function Templates() {
 
       {tab === 'mine' && (
         <div style={{ maxWidth: 1140, margin: '0 auto' }}>
+          {Object.keys(abResults).filter(gid => (abResults[gid] || []).some(v => mine.some(m => m.id === v.id))).length > 0 && (
+            <div style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {Object.entries(abResults).filter(([gid, variants]) => variants.some(v => mine.some(m => m.id === v.id))).map(([gid, variants]) => {
+                const anyData = variants.some(v => v.assigned >= 5);
+                const best = anyData ? variants.reduce((a, b) => (b.assigned >= 5 && (b.replyRate ?? -1) > (a.replyRate ?? -1)) ? b : a, variants.find(v => v.assigned >= 5)) : null;
+                const baseName = (variants[0]?.name || '').replace(/\s*\(Variant [A-Z]\)\s*$/, '');
+                return (
+                  <div key={gid} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16 }}>
+                    <div style={{ fontWeight: 800, fontSize: 13, color: '#0f172a', marginBottom: 10 }}>🔀 A/B Test Results - {baseName}</div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          {['Variant', 'Assigned', 'Reply Rate', 'Positive Rate', 'Stage Advancement'].map(h => (
+                            <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: '#94a3b8', fontWeight: 700, fontSize: 10, textTransform: 'uppercase' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {variants.map(v => (
+                          <tr key={v.id} style={{ borderBottom: '1px solid #f8fafc', background: best && v.id === best.id ? '#f0fdf4' : 'transparent' }}>
+                            <td style={{ padding: '6px 8px', fontWeight: 700, color: '#0f172a' }}>{v.label}{best && v.id === best.id ? ' \uD83C\uDFC6' : ''}</td>
+                            <td style={{ padding: '6px 8px' }}>{v.assigned}</td>
+                            <td style={{ padding: '6px 8px' }}>{v.assigned >= 5 ? v.replyRate + '%' : '\u2014'}</td>
+                            <td style={{ padding: '6px 8px' }}>{v.assigned >= 5 ? v.positiveRate + '%' : '\u2014'}</td>
+                            <td style={{ padding: '6px 8px' }}>{v.assigned >= 5 ? v.advancedRate + '%' : '\u2014'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {!anyData && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 8 }}>Not enough usage yet (need 5+ assigned per variant) to call a winner</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {mine.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0' }}>No templates yet - create one or add one from the Library</div> :
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 12 }}>
             {mine.map(t => <TemplateCard key={t.id} t={t} context="mine" />)}
