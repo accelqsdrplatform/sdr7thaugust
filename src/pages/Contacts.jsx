@@ -426,25 +426,6 @@ export default function Contacts() {
     if (withStats.length && !startMailboxId) setStartMailboxId(withStats[0].id);
   }
 
-  // A/B test groups: show one representative option per group (lowest
-  // letter) instead of every variant, so a rep picks "the test" rather than
-  // a specific variant — the random split happens per contact in batchStart.
-  function dedupeAbVariants(tpls) {
-    const byGroup = {};
-    const standalone = [];
-    (tpls || []).forEach(t => {
-      if (t.ab_group_id) { (byGroup[t.ab_group_id] = byGroup[t.ab_group_id] || []).push(t); }
-      else standalone.push(t);
-    });
-    const reps = Object.values(byGroup).map(variants => {
-      const sorted = [...variants].sort((a, b) => (a.ab_label || '').localeCompare(b.ab_label || ''));
-      const rep = sorted[0];
-      const baseName = (rep.name || '').replace(/\s*\(Variant [A-Z]\)\s*$/, '');
-      return { ...rep, name: baseName + ' (A/B test \u00b7 ' + sorted.length + ' variants)', _abVariants: sorted };
-    });
-    return [...standalone, ...reps];
-  }
-
   async function openStartFlow() {
     if (myMailboxes.length === 0) {
       setBatchMsg('Register a mailbox under Mailboxes before starting outreach.');
@@ -453,10 +434,39 @@ export default function Contacts() {
     }
     if (!startMailboxId) setStartMailboxId(myMailboxes[0].id);
     const { data: tpls } = await supabase.from('templates').select('*').eq('status', 'approved').eq('visibility', 'org').order('name');
-    setTemplateOptions(dedupeAbVariants(tpls || []));
+    setTemplateOptions(tpls || []);
     setStartTrack('ai');
     setStartTemplateId('');
     setShowTrackModal(true);
+  }
+
+  // A/B tests live INSIDE a step (Test A / Test B / ...), not as separate
+  // templates — this fetches a template's steps plus each step's active
+  // variants once, then a random active variant gets picked per step,
+  // independently, for each contact enrolled (see pickStepsSnapshot below).
+  async function getTemplateStepsMeta(templateId, cache) {
+    if (cache[templateId]) return cache[templateId];
+    const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', templateId).order('step_number');
+    const stepRows = steps || [];
+    const stepIds = stepRows.map(s => s.id);
+    let variantsByStep = {};
+    if (stepIds.length > 0) {
+      const { data: variants } = await supabase.from('template_step_variants').select('*').in('template_step_id', stepIds).eq('is_active', true);
+      (variants || []).forEach(v => { (variantsByStep[v.template_step_id] = variantsByStep[v.template_step_id] || []).push(v); });
+    }
+    const meta = { steps: stepRows, variantsByStep };
+    cache[templateId] = meta;
+    return meta;
+  }
+  function pickStepsSnapshot(meta) {
+    return meta.steps.map(s => {
+      const vs = meta.variantsByStep[s.id] || [];
+      if (vs.length > 0) {
+        const chosen = vs[Math.floor(Math.random() * vs.length)];
+        return { step_number: s.step_number, subject: chosen.subject, body: chosen.body, delay_days: s.delay_days, variant_label: chosen.label };
+      }
+      return { step_number: s.step_number, subject: s.subject, body: s.body, delay_days: s.delay_days };
+    });
   }
 
   function confirmTrackChoice() {
@@ -479,22 +489,11 @@ export default function Contacts() {
     const now = new Date().toISOString();
     const mailbox = myMailboxes.find(m => m.id === startMailboxId);
 
-    // Templated track: resolve the pool of variants once (just the one
-    // template if it isn't part of an A/B group); a fresh random pick
-    // happens per contact below so the group's traffic gets split.
-    let variantPool = [];
-    const stepsCache = {};
-    if (startTrack === 'templated' && startTemplateId) {
-      const templateRow = templateOptions.find(t => t.id === startTemplateId);
-      variantPool = templateRow?._abVariants?.length ? templateRow._abVariants : (templateRow ? [templateRow] : []);
-    }
-    async function stepsFor(templateId) {
-      if (!stepsCache[templateId]) {
-        const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', templateId).order('step_number');
-        stepsCache[templateId] = (steps || []).map(s => ({ step_number: s.step_number, subject: s.subject, body: s.body, delay_days: s.delay_days }));
-      }
-      return stepsCache[templateId];
-    }
+    // Templated track: fetch the template's steps + active variants once,
+    // then every contact gets its own random pick per step below.
+    const templateRow = (startTrack === 'templated' && startTemplateId) ? templateOptions.find(t => t.id === startTemplateId) : null;
+    const stepsMetaCache = {};
+    const templateMeta = templateRow ? await getTemplateStepsMeta(templateRow.id, stepsMetaCache) : null;
 
     let done = 0;
     for (const id of ids) {
@@ -507,12 +506,10 @@ export default function Contacts() {
         updatePayload.sender_email = mailbox.email_address;
       }
       await supabase.from('contacts').update(updatePayload).eq('id', id);
-      if (startTrack === 'templated' && variantPool.length) {
-        const chosen = variantPool[Math.floor(Math.random() * variantPool.length)];
-        const steps = await stepsFor(chosen.id);
+      if (startTrack === 'templated' && templateRow && templateMeta) {
         await supabase.from('template_assignments').insert({
-          contact_id: id, template_id: chosen.id, template_name: chosen.name,
-          template_version: chosen.version, steps, current_step: 1, status: 'active', assigned_by: user.id,
+          contact_id: id, template_id: templateRow.id, template_name: templateRow.name,
+          template_version: templateRow.version, steps: pickStepsSnapshot(templateMeta), current_step: 1, status: 'active', assigned_by: user.id,
         });
       }
       await supabase.from('activity_log').insert({ actor_id: user.id, contact_id: id, activity_type: 'outreach_started', details: { started_from: 'contacts', note: 'Batch start', track: startTrack, template_id: startTrack === 'templated' ? startTemplateId : null } });
