@@ -38,7 +38,7 @@ function StatusBadge({ status }) {
   return <span style={{ background: c.bg, color: c.color, fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20 }}>{c.label}</span>;
 }
 
-function emptyStep(n) { return { step_number: n, subject: '', body: '', delay_days: n === 1 ? 0 : 3 }; }
+function emptyStep(n) { return { step_number: n, delay_days: n === 1 ? 0 : 3, variants: [{ label: 'A', subject: '', body: '', is_active: true }] }; }
 
 function btnStyle(kind) {
   const map = {
@@ -60,8 +60,6 @@ export default function Templates() {
   const [approvals, setApprovals] = useState([]);
   const [ownerNames, setOwnerNames] = useState({});
   const [stats, setStats] = useState({});
-  const [allTemplates, setAllTemplates] = useState([]);
-  const [abResults, setAbResults] = useState({});
   const [loading, setLoading] = useState(true);
 
   const [fPlatform, setFPlatform] = useState([]);
@@ -72,6 +70,7 @@ export default function Templates() {
 
   const [editing, setEditing] = useState(null);
   const [editSteps, setEditSteps] = useState([]);
+  const [activeVariantTab, setActiveVariantTab] = useState({});
   const [saving, setSaving] = useState(false);
 
   const [previewing, setPreviewing] = useState(null);
@@ -102,8 +101,6 @@ export default function Templates() {
       setOwnerNames(map);
     }
 
-    setAllTemplates(allRows);
-
     const ids = allRows.map(r => r.id);
     if (ids.length > 0) {
       const { data: assigns } = await supabase.from('template_assignments').select('template_id, status, contact_id').in('template_id', ids);
@@ -119,37 +116,9 @@ export default function Templates() {
         const total = rows.length;
         const completed = rows.filter(a => a.status === 'completed').length;
         const replied = rows.filter(a => contactMap[a.contact_id]?.response_state === 'replied').length;
-        const positive = rows.filter(a => ['warm', 'prospect'].includes(contactMap[a.contact_id]?.response_type)).length;
-        const advanced = rows.filter(a => contactMap[a.contact_id] && contactMap[a.contact_id].status !== 'Fresh').length;
-        statMap[id] = { total, completed, replied, positive, advanced };
+        statMap[id] = { total, completed, replied };
       });
       setStats(statMap);
-
-      // A/B test roll-ups: group variants that share an ab_group_id and
-      // summarize each variant's performance side by side.
-      const groups = {};
-      allRows.forEach(t => {
-        if (t.ab_group_id) { (groups[t.ab_group_id] = groups[t.ab_group_id] || []).push(t); }
-      });
-      const abMap = {};
-      Object.entries(groups).forEach(([gid, variants]) => {
-        abMap[gid] = variants
-          .slice()
-          .sort((a, b) => (a.ab_label || '').localeCompare(b.ab_label || ''))
-          .map(v => {
-            const s = statMap[v.id] || { total: 0, completed: 0, replied: 0, positive: 0, advanced: 0 };
-            return {
-              id: v.id, label: v.ab_label, name: v.name, status: v.status,
-              assigned: s.total,
-              replyRate: s.total ? Math.round((s.replied / s.total) * 100) : null,
-              positiveRate: s.total ? Math.round((s.positive / s.total) * 100) : null,
-              advancedRate: s.total ? Math.round((s.advanced / s.total) * 100) : null,
-            };
-          });
-      });
-      setAbResults(abMap);
-    } else {
-      setAbResults({});
     }
 
     setLoading(false);
@@ -177,8 +146,26 @@ export default function Templates() {
 
   async function openEdit(t) {
     const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', t.id).order('step_number');
+    const stepRows = steps || [];
+    const stepIds = stepRows.map(s => s.id);
+    let variantsByStep = {};
+    if (stepIds.length > 0) {
+      const { data: variants } = await supabase.from('template_step_variants').select('*').in('template_step_id', stepIds).order('label');
+      (variants || []).forEach(v => { (variantsByStep[v.template_step_id] = variantsByStep[v.template_step_id] || []).push(v); });
+    }
+    const built = stepRows.length > 0 ? stepRows.map(s => {
+      const vs = variantsByStep[s.id];
+      return {
+        step_number: s.step_number,
+        delay_days: s.delay_days,
+        variants: (vs && vs.length > 0)
+          ? vs.map(v => ({ label: v.label, subject: v.subject, body: v.body, is_active: v.is_active }))
+          : [{ label: 'A', subject: s.subject || '', body: s.body || '', is_active: true }],
+      };
+    }) : [emptyStep(1)];
     setEditing({ ...t });
-    setEditSteps((steps && steps.length > 0) ? steps : [emptyStep(1)]);
+    setEditSteps(built);
+    setActiveVariantTab({});
   }
 
   function addStep() {
@@ -191,12 +178,47 @@ export default function Templates() {
     setEditSteps(s => s.map((st, i) => i === idx ? { ...st, [field]: val } : st));
   }
   function insertMergeField(idx, field) {
-    setEditSteps(s => s.map((st, i) => i === idx ? { ...st, body: (st.body || '') + ' ' + field } : st));
+    const label = activeVariantTab[idx] || editSteps[idx]?.variants?.[0]?.label;
+    setEditSteps(s => s.map((st, i) => i !== idx ? st : {
+      ...st,
+      variants: st.variants.map(v => v.label === label ? { ...v, body: (v.body || '') + ' ' + field } : v),
+    }));
+  }
+
+  function addVariant(stepIdx) {
+    const st = editSteps[stepIdx];
+    const used = new Set(st.variants.map(v => v.label));
+    let label = null;
+    for (let c = 0; c < 26; c++) { const l = String.fromCharCode(65 + c); if (!used.has(l)) { label = l; break; } }
+    if (!label) { showToast('Maximum of 26 tests (A-Z) reached', 'error'); return; }
+    setEditSteps(s => s.map((stp, i) => i === stepIdx ? { ...stp, variants: [...stp.variants, { label, subject: '', body: '', is_active: true }] } : stp));
+    setActiveVariantTab(t => ({ ...t, [stepIdx]: label }));
+  }
+
+  function removeVariant(stepIdx, label) {
+    setEditSteps(s => s.map((stp, i) => {
+      if (i !== stepIdx || stp.variants.length <= 1) return stp;
+      return { ...stp, variants: stp.variants.filter(v => v.label !== label) };
+    }));
+  }
+
+  function toggleVariantActive(stepIdx, label) {
+    setEditSteps(s => s.map((stp, i) => i !== stepIdx ? stp : {
+      ...stp, variants: stp.variants.map(v => v.label === label ? { ...v, is_active: !v.is_active } : v),
+    }));
+  }
+
+  function updateVariant(stepIdx, label, field, val) {
+    setEditSteps(s => s.map((stp, i) => i !== stepIdx ? stp : {
+      ...stp, variants: stp.variants.map(v => v.label === label ? { ...v, [field]: val } : v),
+    }));
   }
 
   async function saveTemplate(publish) {
     if (!editing.name.trim()) { showToast('Name is required', 'error'); return; }
-    if (editSteps.some(s => !s.subject.trim() || !s.body.trim())) { showToast('Every step needs a subject and body', 'error'); return; }
+    if (editSteps.some(s => !s.variants || s.variants.length === 0)) { showToast('Every step needs at least one test', 'error'); return; }
+    if (editSteps.some(s => s.variants.some(v => !v.subject.trim() || !v.body.trim()))) { showToast('Every test needs a subject and body', 'error'); return; }
+    if (editSteps.some(s => !s.variants.some(v => v.is_active))) { showToast('Every step needs at least one active test', 'error'); return; }
     setSaving(true);
     try {
       const isNew = !editing.id;
@@ -227,11 +249,29 @@ export default function Templates() {
       }
 
       await supabase.from('template_steps').delete().eq('template_id', templateId);
-      const stepRows = editSteps.map((s, i) => ({
-        template_id: templateId, step_number: i + 1, subject: s.subject, body: s.body, delay_days: s.delay_days || 0,
-      }));
-      const { error: stepErr } = await supabase.from('template_steps').insert(stepRows);
+      // The step's own subject/body stay in sync with Test A (the primary
+      // variant) so anything that still reads template_steps directly keeps working.
+      const stepPayload = editSteps.map((s, i) => {
+        const primary = s.variants.find(v => v.label === 'A') || s.variants[0];
+        return { template_id: templateId, step_number: i + 1, subject: primary.subject, body: primary.body, delay_days: s.delay_days || 0 };
+      });
+      const { data: insertedSteps, error: stepErr } = await supabase.from('template_steps').insert(stepPayload).select();
       if (stepErr) throw stepErr;
+
+      const stepByNumber = {};
+      (insertedSteps || []).forEach(row => { stepByNumber[row.step_number] = row; });
+      const allVariantRows = [];
+      editSteps.forEach((s, i) => {
+        const stepRow = stepByNumber[i + 1];
+        if (!stepRow) return;
+        s.variants.forEach(v => {
+          allVariantRows.push({ template_step_id: stepRow.id, label: v.label, subject: v.subject, body: v.body, is_active: v.is_active });
+        });
+      });
+      if (allVariantRows.length > 0) {
+        const { error: varErr } = await supabase.from('template_step_variants').insert(allVariantRows);
+        if (varErr) throw varErr;
+      }
 
       setEditing(null);
       setEditSteps([]);
@@ -246,6 +286,12 @@ export default function Templates() {
 
   async function cloneTemplate(t) {
     const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', t.id).order('step_number');
+    const stepIds = (steps || []).map(s => s.id);
+    let variantsByStep = {};
+    if (stepIds.length > 0) {
+      const { data: variants } = await supabase.from('template_step_variants').select('*').in('template_step_id', stepIds);
+      (variants || []).forEach(v => { (variantsByStep[v.template_step_id] = variantsByStep[v.template_step_id] || []).push(v); });
+    }
     const { data: inserted, error } = await supabase.from('templates').insert({
       owner_id: user.id,
       parent_template_id: t.id,
@@ -257,56 +303,20 @@ export default function Templates() {
       status: 'approved', visibility: 'private', version: 1,
     }).select().single();
     if (error) { showToast(error.message, 'error'); return; }
-    const stepRows = (steps || []).map(s => ({ template_id: inserted.id, step_number: s.step_number, subject: s.subject, body: s.body, delay_days: s.delay_days }));
-    if (stepRows.length > 0) await supabase.from('template_steps').insert(stepRows);
+    const stepPayload = (steps || []).map(s => ({ template_id: inserted.id, step_number: s.step_number, subject: s.subject, body: s.body, delay_days: s.delay_days }));
+    if (stepPayload.length > 0) {
+      const { data: newSteps } = await supabase.from('template_steps').insert(stepPayload).select();
+      const oldToNew = {};
+      (steps || []).forEach(old => { const match = (newSteps || []).find(ns => ns.step_number === old.step_number); if (match) oldToNew[old.id] = match.id; });
+      const variantRows = [];
+      (steps || []).forEach(old => {
+        const vs = variantsByStep[old.id] || [];
+        vs.forEach(v => { variantRows.push({ template_step_id: oldToNew[old.id], label: v.label, subject: v.subject, body: v.body, is_active: v.is_active }); });
+      });
+      if (variantRows.length > 0) await supabase.from('template_step_variants').insert(variantRows);
+    }
     await loadAll();
     showToast('Added to My Templates - edit it freely, the original stays untouched');
-  }
-
-  function nextAbLabel(existingLabels) {
-    const used = new Set(existingLabels);
-    for (let i = 0; i < 26; i++) {
-      const l = String.fromCharCode(65 + i);
-      if (!used.has(l)) return l;
-    }
-    return null;
-  }
-
-  async function cloneAsVariant(t, groupId, label) {
-    const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', t.id).order('step_number');
-    const baseName = (t.name || '').replace(/\s*\(Variant [A-Z]\)\s*$/, '');
-    const { data: inserted, error } = await supabase.from('templates').insert({
-      owner_id: user.id,
-      parent_template_id: t.parent_template_id || t.id,
-      name: baseName + ' (Variant ' + label + ')',
-      description: t.description,
-      platform_tags: t.platform_tags, persona_tags: t.persona_tags,
-      campaign_tags: t.campaign_tags, industry_tags: t.industry_tags,
-      step_count: (steps || []).length,
-      status: 'draft', visibility: t.visibility || 'private', version: 1,
-      ab_group_id: groupId, ab_label: label,
-    }).select().single();
-    if (error) { showToast(error.message, 'error'); return null; }
-    const stepRows = (steps || []).map(s => ({ template_id: inserted.id, step_number: s.step_number, subject: s.subject, body: s.body, delay_days: s.delay_days }));
-    if (stepRows.length > 0) await supabase.from('template_steps').insert(stepRows);
-    return inserted;
-  }
-
-  async function startAbTest(t) {
-    const groupId = crypto.randomUUID();
-    await supabase.from('templates').update({ ab_group_id: groupId, ab_label: 'A' }).eq('id', t.id);
-    await cloneAsVariant({ ...t, ab_group_id: groupId, ab_label: 'A' }, groupId, 'B');
-    await loadAll();
-    showToast('Started an A/B test - Variant A is this template, edit Variant B to make it different');
-  }
-
-  async function addAbVariant(t) {
-    const group = allTemplates.filter(x => x.ab_group_id === t.ab_group_id);
-    const label = nextAbLabel(group.map(x => x.ab_label));
-    if (!label) { showToast('Maximum of 26 variants (A-Z) reached', 'error'); return; }
-    await cloneAsVariant(t, t.ab_group_id, label);
-    await loadAll();
-    showToast('Added Variant ' + label + ' - edit it so it differs from the others');
   }
 
   async function submitForApproval(t) {
@@ -334,8 +344,14 @@ export default function Templates() {
 
   async function openPreview(t) {
     const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', t.id).order('step_number');
+    const stepIds = (steps || []).map(s => s.id);
+    let variantsByStep = {};
+    if (stepIds.length > 0) {
+      const { data: variants } = await supabase.from('template_step_variants').select('*').in('template_step_id', stepIds).order('label');
+      (variants || []).forEach(v => { (variantsByStep[v.template_step_id] = variantsByStep[v.template_step_id] || []).push(v); });
+    }
     setPreviewing(t);
-    setPreviewSteps(steps || []);
+    setPreviewSteps((steps || []).map(s => ({ ...s, variants: variantsByStep[s.id] || [] })));
   }
 
   function TemplateCard({ t, context }) {
@@ -348,14 +364,6 @@ export default function Templates() {
           <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a', flex: 1 }}>{t.name}</div>
           <StatusBadge status={t.status} />
         </div>
-        {t.ab_group_id && (() => {
-          const group = allTemplates.filter(x => x.ab_group_id === t.ab_group_id);
-          return (
-            <div style={{ fontSize: 10, color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ddd6fe', padding: '2px 8px', borderRadius: 20, fontWeight: 700, alignSelf: 'flex-start' }}>
-              🔀 Variant {t.ab_label} of {group.length}
-            </div>
-          );
-        })()}
         {t.description && <div style={{ fontSize: 12, color: '#64748b' }}>{t.description}</div>}
         <div style={{ fontSize: 11, color: '#94a3b8' }}>{t.step_count} step{t.step_count === 1 ? '' : 's'} - by {ownerNames[t.owner_id] || 'Unknown'} - v{t.version}</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -380,12 +388,6 @@ export default function Templates() {
           {context === 'mine' && (
             <>
               <button onClick={() => openEdit(t)} style={btnStyle('secondary')}>Edit</button>
-              {!t.ab_group_id && (
-                <button onClick={() => startAbTest(t)} style={btnStyle('secondary')}>🔀 A/B Test This</button>
-              )}
-              {t.ab_group_id && (
-                <button onClick={() => addAbVariant(t)} style={btnStyle('secondary')}>+ Add Variant</button>
-              )}
               {(t.status === 'draft' || t.status === 'rejected') && (
                 <button onClick={() => submitForApproval(t)} style={btnStyle('primary')}>Submit for Approval</button>
               )}
@@ -458,41 +460,6 @@ export default function Templates() {
 
       {tab === 'mine' && (
         <div style={{ maxWidth: 1140, margin: '0 auto' }}>
-          {Object.keys(abResults).filter(gid => (abResults[gid] || []).some(v => mine.some(m => m.id === v.id))).length > 0 && (
-            <div style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {Object.entries(abResults).filter(([gid, variants]) => variants.some(v => mine.some(m => m.id === v.id))).map(([gid, variants]) => {
-                const anyData = variants.some(v => v.assigned >= 5);
-                const best = anyData ? variants.reduce((a, b) => (b.assigned >= 5 && (b.replyRate ?? -1) > (a.replyRate ?? -1)) ? b : a, variants.find(v => v.assigned >= 5)) : null;
-                const baseName = (variants[0]?.name || '').replace(/\s*\(Variant [A-Z]\)\s*$/, '');
-                return (
-                  <div key={gid} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16 }}>
-                    <div style={{ fontWeight: 800, fontSize: 13, color: '#0f172a', marginBottom: 10 }}>🔀 A/B Test Results - {baseName}</div>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          {['Variant', 'Assigned', 'Reply Rate', 'Positive Rate', 'Stage Advancement'].map(h => (
-                            <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: '#94a3b8', fontWeight: 700, fontSize: 10, textTransform: 'uppercase' }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {variants.map(v => (
-                          <tr key={v.id} style={{ borderBottom: '1px solid #f8fafc', background: best && v.id === best.id ? '#f0fdf4' : 'transparent' }}>
-                            <td style={{ padding: '6px 8px', fontWeight: 700, color: '#0f172a' }}>{v.label}{best && v.id === best.id ? ' \uD83C\uDFC6' : ''}</td>
-                            <td style={{ padding: '6px 8px' }}>{v.assigned}</td>
-                            <td style={{ padding: '6px 8px' }}>{v.assigned >= 5 ? v.replyRate + '%' : '\u2014'}</td>
-                            <td style={{ padding: '6px 8px' }}>{v.assigned >= 5 ? v.positiveRate + '%' : '\u2014'}</td>
-                            <td style={{ padding: '6px 8px' }}>{v.assigned >= 5 ? v.advancedRate + '%' : '\u2014'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {!anyData && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 8 }}>Not enough usage yet (need 5+ assigned per variant) to call a winner</div>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
           {mine.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0' }}>No templates yet - create one or add one from the Library</div> :
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 12 }}>
             {mine.map(t => <TemplateCard key={t.id} t={t} context="mine" />)}
@@ -543,7 +510,10 @@ export default function Templates() {
               </div>
 
               <div style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', margin: '18px 0 10px', borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>Steps ({editSteps.length})</div>
-              {editSteps.map((s, i) => (
+              {editSteps.map((s, i) => {
+                const activeLabel = activeVariantTab[i] || s.variants[0]?.label;
+                const activeVariant = s.variants.find(v => v.label === activeLabel) || s.variants[0];
+                return (
                 <div key={i} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, marginBottom: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>Step {i + 1}</div>
@@ -553,16 +523,48 @@ export default function Templates() {
                       {editSteps.length > 1 && <button onClick={() => removeStep(i)} style={{ border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12 }}>Remove</button>}
                     </div>
                   </div>
-                  <input value={s.subject} onChange={e => updateStep(i, 'subject', e.target.value)} placeholder="Subject line" style={{ width: '100%', boxSizing: 'border-box', border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '7px 10px', fontSize: 13, marginBottom: 8 }} />
-                  <textarea value={s.body} onChange={e => updateStep(i, 'body', e.target.value)} placeholder="Email body" rows={5} style={{ width: '100%', boxSizing: 'border-box', border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '7px 10px', fontSize: 13, resize: 'vertical' }} />
-                  <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 11, color: '#94a3b8', alignSelf: 'center' }}>Insert:</span>
-                    {MERGE_FIELDS.map(f => (
-                      <span key={f} onClick={() => insertMergeField(i, f)} style={{ fontSize: 10, background: '#f0f9ff', color: '#0369a1', padding: '2px 8px', borderRadius: 12, cursor: 'pointer', border: '1px solid #bae6fd' }}>{f}</span>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 10, borderBottom: '1px solid #f1f5f9', paddingBottom: 8 }}>
+                    {s.variants.map(v => (
+                      <div key={v.label} onClick={() => setActiveVariantTab(t => ({ ...t, [i]: v.label }))}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, cursor: 'pointer',
+                          background: activeLabel === v.label ? '#eff6ff' : 'transparent',
+                          border: '1.5px solid ' + (activeLabel === v.label ? '#3b82f6' : 'transparent') }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: activeLabel === v.label ? '#1d4ed8' : '#475569' }}>Test {v.label}</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 10,
+                          background: v.is_active ? '#dcfce7' : '#f1f5f9', color: v.is_active ? '#166534' : '#94a3b8' }}>
+                          {v.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
                     ))}
+                    <button onClick={() => addVariant(i)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, border: '1.5px dashed #94a3b8', background: '#f8fafc', color: '#64748b', cursor: 'pointer' }}>+ Add test</button>
                   </div>
+
+                  {activeVariant && (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 6 }}>
+                        <button onClick={() => toggleVariantActive(i, activeVariant.label)}
+                          style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid ' + (activeVariant.is_active ? '#fecaca' : '#bbf7d0'),
+                            background: '#fff', color: activeVariant.is_active ? '#dc2626' : '#16a34a', cursor: 'pointer' }}>
+                          {activeVariant.is_active ? 'Mark Inactive' : 'Mark Active'}
+                        </button>
+                        {s.variants.length > 1 && (
+                          <button onClick={() => removeVariant(i, activeVariant.label)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer' }}>Delete test</button>
+                        )}
+                      </div>
+                      <input value={activeVariant.subject} onChange={e => updateVariant(i, activeVariant.label, 'subject', e.target.value)} placeholder="Subject line" style={{ width: '100%', boxSizing: 'border-box', border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '7px 10px', fontSize: 13, marginBottom: 8 }} />
+                      <textarea value={activeVariant.body} onChange={e => updateVariant(i, activeVariant.label, 'body', e.target.value)} placeholder="Email body" rows={5} style={{ width: '100%', boxSizing: 'border-box', border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '7px 10px', fontSize: 13, resize: 'vertical' }} />
+                      <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: '#94a3b8', alignSelf: 'center' }}>Insert:</span>
+                        {MERGE_FIELDS.map(f => (
+                          <span key={f} onClick={() => insertMergeField(i, f)} style={{ fontSize: 10, background: '#f0f9ff', color: '#0369a1', padding: '2px 8px', borderRadius: 12, cursor: 'pointer', border: '1px solid #bae6fd' }}>{f}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
               <button onClick={addStep} style={{ padding: '7px 14px', borderRadius: 8, border: '1.5px dashed #94a3b8', background: '#f8fafc', color: '#64748b', fontSize: 12, fontWeight: 600, cursor: 'pointer', width: '100%' }}>+ Add Step</button>
             </div>
             <div style={{ padding: '16px 22px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -585,8 +587,21 @@ export default function Templates() {
               {previewSteps.map((s, i) => (
                 <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < previewSteps.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
                   <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Step {s.step_number} {s.delay_days > 0 ? '(+' + s.delay_days + ' days)' : ''}</div>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a', marginBottom: 6 }}>{s.subject}</div>
-                  <div style={{ fontSize: 13, color: '#374151', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{s.body}</div>
+                  {s.variants && s.variants.length > 1 ? s.variants.map(v => (
+                    <div key={v.label} style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: '#f8fafc', border: '1px solid #f1f5f9' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#7c3aed' }}>Test {v.label}</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 10, background: v.is_active ? '#dcfce7' : '#f1f5f9', color: v.is_active ? '#166534' : '#94a3b8' }}>{v.is_active ? 'Active' : 'Inactive'}</span>
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a', marginBottom: 4 }}>{v.subject}</div>
+                      <div style={{ fontSize: 13, color: '#374151', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{v.body}</div>
+                    </div>
+                  )) : (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a', marginBottom: 6 }}>{s.subject}</div>
+                      <div style={{ fontSize: 13, color: '#374151', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{s.body}</div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
