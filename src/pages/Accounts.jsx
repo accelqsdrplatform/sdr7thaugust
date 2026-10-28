@@ -1332,25 +1332,6 @@ setSaving(false);
     if (withStats.length && !startMailboxId) setStartMailboxId(withStats[0].id);
   }
 
-  // A/B test groups: show one representative option per group (lowest
-  // letter) instead of every variant — the random split happens per contact
-  // in runStartContact, not by the rep manually picking a variant.
-  function dedupeAbVariants(tpls) {
-    const byGroup = {};
-    const standalone = [];
-    (tpls || []).forEach(t => {
-      if (t.ab_group_id) { (byGroup[t.ab_group_id] = byGroup[t.ab_group_id] || []).push(t); }
-      else standalone.push(t);
-    });
-    const reps = Object.values(byGroup).map(variants => {
-      const sorted = [...variants].sort((a, b) => (a.ab_label || '').localeCompare(b.ab_label || ''));
-      const rep = sorted[0];
-      const baseName = (rep.name || '').replace(/\s*\(Variant [A-Z]\)\s*$/, '');
-      return { ...rep, name: baseName + ' (A/B test \u00b7 ' + sorted.length + ' variants)', _abVariants: sorted };
-    });
-    return [...standalone, ...reps];
-  }
-
   async function startContact(c) {
     if (!c.sender_account_id && myMailboxes.length === 0) {
       toast.error('Register a mailbox under Mailboxes before starting outreach.');
@@ -1359,10 +1340,35 @@ setSaving(false);
     setPendingStartContact(c);
     if (!startMailboxId) setStartMailboxId(myMailboxes[0]?.id || '');
     const { data: tpls } = await supabase.from('templates').select('*').eq('status', 'approved').eq('visibility', 'org').order('name');
-    setTemplateOptions(dedupeAbVariants(tpls || []));
+    setTemplateOptions(tpls || []);
     setStartTrack('ai');
     setStartTemplateId('');
     setShowTrackModal(true);
+  }
+
+  // A/B tests live INSIDE a step (Test A / Test B / ...) — fetch the
+  // template's steps plus each step's active variants, then randomly pick
+  // one active variant per step for this contact's assignment snapshot.
+  async function getTemplateStepsMeta(templateId) {
+    const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', templateId).order('step_number');
+    const stepRows = steps || [];
+    const stepIds = stepRows.map(s => s.id);
+    let variantsByStep = {};
+    if (stepIds.length > 0) {
+      const { data: variants } = await supabase.from('template_step_variants').select('*').in('template_step_id', stepIds).eq('is_active', true);
+      (variants || []).forEach(v => { (variantsByStep[v.template_step_id] = variantsByStep[v.template_step_id] || []).push(v); });
+    }
+    return { steps: stepRows, variantsByStep };
+  }
+  function pickStepsSnapshot(meta) {
+    return meta.steps.map(s => {
+      const vs = meta.variantsByStep[s.id] || [];
+      if (vs.length > 0) {
+        const chosen = vs[Math.floor(Math.random() * vs.length)];
+        return { step_number: s.step_number, subject: chosen.subject, body: chosen.body, delay_days: s.delay_days, variant_label: chosen.label };
+      }
+      return { step_number: s.step_number, subject: s.subject, body: s.body, delay_days: s.delay_days };
+    });
   }
 
   function confirmTrackChoice() {
@@ -1396,16 +1402,14 @@ setSaving(false);
     await supabase.from('contacts').update(updatePayload).eq('id', c.id);
     if (startTrack === 'templated' && startTemplateId) {
       const templateRow = templateOptions.find(t => t.id === startTemplateId);
-      const pool = templateRow?._abVariants?.length ? templateRow._abVariants : (templateRow ? [templateRow] : []);
-      const chosen = pool[Math.floor(Math.random() * pool.length)];
-      if (chosen) {
-        const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', chosen.id).order('step_number');
+      if (templateRow) {
+        const meta = await getTemplateStepsMeta(templateRow.id);
         await supabase.from('template_assignments').insert({
           contact_id: c.id,
-          template_id: chosen.id,
-          template_name: chosen.name || '',
-          template_version: chosen.version || 1,
-          steps: steps || [],
+          template_id: templateRow.id,
+          template_name: templateRow.name || '',
+          template_version: templateRow.version || 1,
+          steps: pickStepsSnapshot(meta),
           current_step: 1,
           status: 'active',
           assigned_by: user.id
