@@ -1332,6 +1332,25 @@ setSaving(false);
     if (withStats.length && !startMailboxId) setStartMailboxId(withStats[0].id);
   }
 
+  // A/B test groups: show one representative option per group (lowest
+  // letter) instead of every variant — the random split happens per contact
+  // in runStartContact, not by the rep manually picking a variant.
+  function dedupeAbVariants(tpls) {
+    const byGroup = {};
+    const standalone = [];
+    (tpls || []).forEach(t => {
+      if (t.ab_group_id) { (byGroup[t.ab_group_id] = byGroup[t.ab_group_id] || []).push(t); }
+      else standalone.push(t);
+    });
+    const reps = Object.values(byGroup).map(variants => {
+      const sorted = [...variants].sort((a, b) => (a.ab_label || '').localeCompare(b.ab_label || ''));
+      const rep = sorted[0];
+      const baseName = (rep.name || '').replace(/\s*\(Variant [A-Z]\)\s*$/, '');
+      return { ...rep, name: baseName + ' (A/B test \u00b7 ' + sorted.length + ' variants)', _abVariants: sorted };
+    });
+    return [...standalone, ...reps];
+  }
+
   async function startContact(c) {
     if (!c.sender_account_id && myMailboxes.length === 0) {
       toast.error('Register a mailbox under Mailboxes before starting outreach.');
@@ -1340,7 +1359,7 @@ setSaving(false);
     setPendingStartContact(c);
     if (!startMailboxId) setStartMailboxId(myMailboxes[0]?.id || '');
     const { data: tpls } = await supabase.from('templates').select('*').eq('status', 'approved').eq('visibility', 'org').order('name');
-    setTemplateOptions(tpls || []);
+    setTemplateOptions(dedupeAbVariants(tpls || []));
     setStartTrack('ai');
     setStartTemplateId('');
     setShowTrackModal(true);
@@ -1376,18 +1395,22 @@ setSaving(false);
     }
     await supabase.from('contacts').update(updatePayload).eq('id', c.id);
     if (startTrack === 'templated' && startTemplateId) {
-      const tpl = templateOptions.find(t => t.id === startTemplateId);
-      const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', startTemplateId).order('step_number');
-      await supabase.from('template_assignments').insert({
-        contact_id: c.id,
-        template_id: startTemplateId,
-        template_name: tpl?.name || '',
-        template_version: tpl?.version || 1,
-        steps: steps || [],
-        current_step: 1,
-        status: 'active',
-        assigned_by: user.id
-      });
+      const templateRow = templateOptions.find(t => t.id === startTemplateId);
+      const pool = templateRow?._abVariants?.length ? templateRow._abVariants : (templateRow ? [templateRow] : []);
+      const chosen = pool[Math.floor(Math.random() * pool.length)];
+      if (chosen) {
+        const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', chosen.id).order('step_number');
+        await supabase.from('template_assignments').insert({
+          contact_id: c.id,
+          template_id: chosen.id,
+          template_name: chosen.name || '',
+          template_version: chosen.version || 1,
+          steps: steps || [],
+          current_step: 1,
+          status: 'active',
+          assigned_by: user.id
+        });
+      }
     }
     await supabase.from('activity_log').insert({
       actor_id: user.id, contact_id: c.id,
