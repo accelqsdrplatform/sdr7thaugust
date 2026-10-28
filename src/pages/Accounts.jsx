@@ -214,6 +214,7 @@ export default function Accounts() {
   const [acctLastTouchedTo, setAcctLastTouchedTo] = useState('');
   const [acctNeverTouched, setAcctNeverTouched] = useState(false);
   const [acctFreshCountFilter, setAcctFreshCountFilter] = useState('');
+  const [acctFreshPctFilter, setAcctFreshPctFilter] = useState('');
   const [acctIndustryOptions, setAcctIndustryOptions] = useState([]);
   const [acctHqFilter, setAcctHqFilter] = useState('');
   const [acctStateFilter, setAcctStateFilter] = useState('');
@@ -222,7 +223,7 @@ export default function Accounts() {
   const [acctListFilter, setAcctListFilter] = useState('');
   const [acctListOptions, setAcctListOptions] = useState([]);
   const activeAcctFilterCount = (filterBy !== 'all' ? 1 : 0) + (acctIndustryFilter ? 1 : 0) + (acctHeadcountFilter ? 1 : 0)
-    + (acctNeverTouched || acctLastTouchedFrom || acctLastTouchedTo ? 1 : 0) + (acctFreshCountFilter ? 1 : 0)
+    + (acctNeverTouched || acctLastTouchedFrom || acctLastTouchedTo ? 1 : 0) + (acctFreshCountFilter ? 1 : 0) + (acctFreshPctFilter ? 1 : 0)
     + (acctHqFilter ? 1 : 0) + (acctStateFilter ? 1 : 0) + (acctListFilter ? 1 : 0);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
@@ -307,6 +308,11 @@ export default function Accounts() {
     else if (acctFreshCountFilter === '1-5') q = q.gte('fresh_contact_count', 1).lte('fresh_contact_count', 5);
     else if (acctFreshCountFilter === '6-15') q = q.gte('fresh_contact_count', 6).lte('fresh_contact_count', 15);
     else if (acctFreshCountFilter === '16+') q = q.gte('fresh_contact_count', 16);
+      if (acctFreshPctFilter === '0') q = q.eq('fresh_contact_pct', 0);
+      else if (acctFreshPctFilter === '1-25') q = q.gte('fresh_contact_pct', 1).lte('fresh_contact_pct', 25);
+      else if (acctFreshPctFilter === '26-50') q = q.gte('fresh_contact_pct', 26).lte('fresh_contact_pct', 50);
+      else if (acctFreshPctFilter === '51-75') q = q.gte('fresh_contact_pct', 51).lte('fresh_contact_pct', 75);
+      else if (acctFreshPctFilter === '76-100') q = q.gte('fresh_contact_pct', 76);
 
     if (search) {
       const s = `%${search}%`;
@@ -318,6 +324,7 @@ export default function Accounts() {
     else if (sortBy === 'headcount') q = q.order('employee_count_numeric', { ascending: false, nullsFirst: false });
     else if (sortBy === 'stale') q = q.order('last_touch_date', { ascending: true, nullsFirst: true });
     else if (sortBy === 'fresh') q = q.order('fresh_contact_count', { ascending: false });
+    else if (sortBy === 'freshpct') q = q.order('fresh_contact_pct', { ascending: false });
     else q = q.order('name', { ascending: true });
 
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
@@ -343,10 +350,10 @@ export default function Accounts() {
       setContactsByAccount({});
     }
     setLoading(false);
-  }, [user.id, canViewAll, viewAll, filterBy, search, sortBy, page, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctHqFilter, acctStateFilter, acctListFilter]);
+  }, [user.id, canViewAll, viewAll, filterBy, search, sortBy, page, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctFreshPctFilter, acctHqFilter, acctStateFilter, acctListFilter]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-  useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctHqFilter, acctStateFilter, acctListFilter]);
+  useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctFreshPctFilter, acctHqFilter, acctStateFilter, acctListFilter]);
 
   // Accounts-by-size rollup for the right-panel summary. Mirrors fetchAll's
   // scoping/filters so it reflects the same book, but deliberately omits the
@@ -393,6 +400,11 @@ export default function Accounts() {
       else if (acctFreshCountFilter === '1-5') q = q.gte('fresh_contact_count', 1).lte('fresh_contact_count', 5);
       else if (acctFreshCountFilter === '6-15') q = q.gte('fresh_contact_count', 6).lte('fresh_contact_count', 15);
       else if (acctFreshCountFilter === '16+') q = q.gte('fresh_contact_count', 16);
+      if (acctFreshPctFilter === '0') q = q.eq('fresh_contact_pct', 0);
+      else if (acctFreshPctFilter === '1-25') q = q.gte('fresh_contact_pct', 1).lte('fresh_contact_pct', 25);
+      else if (acctFreshPctFilter === '26-50') q = q.gte('fresh_contact_pct', 26).lte('fresh_contact_pct', 50);
+      else if (acctFreshPctFilter === '51-75') q = q.gte('fresh_contact_pct', 51).lte('fresh_contact_pct', 75);
+      else if (acctFreshPctFilter === '76-100') q = q.gte('fresh_contact_pct', 76);
       if (search) {
         const s = '%' + search + '%';
         q = q.or('name.ilike.' + s + ',industry.ilike.' + s + ',country.ilike.' + s);
@@ -582,7 +594,7 @@ export default function Accounts() {
 
   const ACCT_SORT_OPTIONS = [
     ['score', '↕ Score'], ['contacts', '↕ Contacts'], ['headcount', '↕ Headcount'],
-    ['stale', '↕ Most Stale'], ['fresh', '↕ Most Unstarted Contacts'], ['name', '↕ A–Z'],
+    ['stale', '↕ Most Stale'], ['fresh', '↕ Most Unstarted Contacts'], ['freshpct', '↕ Highest % Uncontacted'], ['name', '↕ A–Z'],
   ];
 
   // Filtering, search, and sorting now happen server-side in fetchAll (see above)
@@ -674,7 +686,8 @@ export default function Accounts() {
                       {(() => {
                         const freshCt = ctcs.filter(c => c.status === 'Fresh').length;
                         const contactedCt = ctcs.length - freshCt;
-                        return `${ctcs.length} contact${ctcs.length !== 1 ? 's' : ''} · ${contactedCt} contacted · ${freshCt} to start`;
+                        const freshPct = ctcs.length ? Math.round((freshCt / ctcs.length) * 100) : 0;
+                        return `${ctcs.length} contact${ctcs.length !== 1 ? 's' : ''} · ${contactedCt} contacted · ${freshCt} to start (${freshPct}%)`;
                       })()}
                     </div>
                   </div>
@@ -899,6 +912,17 @@ export default function Accounts() {
                     <option value="1-5">1 – 5</option>
                     <option value="6-15">6 – 15</option>
                     <option value="16+">16+</option>
+                  </select>
+                )}
+                {matchesAcctFilterSearch('% Yet To Start') && (
+                  <select value={acctFreshPctFilter} onChange={e => setAcctFreshPctFilter(e.target.value)}
+                    style={{ width: '100%', marginBottom: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + (acctFreshPctFilter ? '#2563eb' : '#e0e0e0'), fontSize: 12, cursor: 'pointer', background: acctFreshPctFilter ? '#eff6ff' : '#fff', color: acctFreshPctFilter ? '#1d4ed8' : '#555' }}>
+                    <option value="">% Yet To Start: All</option>
+                    <option value="0">0% (fully worked)</option>
+                    <option value="1-25">1 – 25%</option>
+                    <option value="26-50">26 – 50%</option>
+                    <option value="51-75">51 – 75%</option>
+                    <option value="76-100">76 – 100%</option>
                   </select>
                 )}
                 {matchesAcctFilterSearch('Last Touched') && (
