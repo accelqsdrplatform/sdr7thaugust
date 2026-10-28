@@ -426,6 +426,25 @@ export default function Contacts() {
     if (withStats.length && !startMailboxId) setStartMailboxId(withStats[0].id);
   }
 
+  // A/B test groups: show one representative option per group (lowest
+  // letter) instead of every variant, so a rep picks "the test" rather than
+  // a specific variant — the random split happens per contact in batchStart.
+  function dedupeAbVariants(tpls) {
+    const byGroup = {};
+    const standalone = [];
+    (tpls || []).forEach(t => {
+      if (t.ab_group_id) { (byGroup[t.ab_group_id] = byGroup[t.ab_group_id] || []).push(t); }
+      else standalone.push(t);
+    });
+    const reps = Object.values(byGroup).map(variants => {
+      const sorted = [...variants].sort((a, b) => (a.ab_label || '').localeCompare(b.ab_label || ''));
+      const rep = sorted[0];
+      const baseName = (rep.name || '').replace(/\s*\(Variant [A-Z]\)\s*$/, '');
+      return { ...rep, name: baseName + ' (A/B test \u00b7 ' + sorted.length + ' variants)', _abVariants: sorted };
+    });
+    return [...standalone, ...reps];
+  }
+
   async function openStartFlow() {
     if (myMailboxes.length === 0) {
       setBatchMsg('Register a mailbox under Mailboxes before starting outreach.');
@@ -434,7 +453,7 @@ export default function Contacts() {
     }
     if (!startMailboxId) setStartMailboxId(myMailboxes[0].id);
     const { data: tpls } = await supabase.from('templates').select('*').eq('status', 'approved').eq('visibility', 'org').order('name');
-    setTemplateOptions(tpls || []);
+    setTemplateOptions(dedupeAbVariants(tpls || []));
     setStartTrack('ai');
     setStartTemplateId('');
     setShowTrackModal(true);
@@ -460,15 +479,21 @@ export default function Contacts() {
     const now = new Date().toISOString();
     const mailbox = myMailboxes.find(m => m.id === startMailboxId);
 
-    // Templated track: snapshot the chosen template's steps once here, so
-    // later edits to the template never retroactively change a contact
-    // already assigned to it - only future assignments pick up changes.
-    let templateSteps = [];
-    let templateRow = null;
+    // Templated track: resolve the pool of variants once (just the one
+    // template if it isn't part of an A/B group); a fresh random pick
+    // happens per contact below so the group's traffic gets split.
+    let variantPool = [];
+    const stepsCache = {};
     if (startTrack === 'templated' && startTemplateId) {
-      templateRow = templateOptions.find(t => t.id === startTemplateId);
-      const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', startTemplateId).order('step_number');
-      templateSteps = (steps || []).map(s => ({ step_number: s.step_number, subject: s.subject, body: s.body, delay_days: s.delay_days }));
+      const templateRow = templateOptions.find(t => t.id === startTemplateId);
+      variantPool = templateRow?._abVariants?.length ? templateRow._abVariants : (templateRow ? [templateRow] : []);
+    }
+    async function stepsFor(templateId) {
+      if (!stepsCache[templateId]) {
+        const { data: steps } = await supabase.from('template_steps').select('*').eq('template_id', templateId).order('step_number');
+        stepsCache[templateId] = (steps || []).map(s => ({ step_number: s.step_number, subject: s.subject, body: s.body, delay_days: s.delay_days }));
+      }
+      return stepsCache[templateId];
     }
 
     let done = 0;
@@ -482,10 +507,12 @@ export default function Contacts() {
         updatePayload.sender_email = mailbox.email_address;
       }
       await supabase.from('contacts').update(updatePayload).eq('id', id);
-      if (startTrack === 'templated' && templateRow) {
+      if (startTrack === 'templated' && variantPool.length) {
+        const chosen = variantPool[Math.floor(Math.random() * variantPool.length)];
+        const steps = await stepsFor(chosen.id);
         await supabase.from('template_assignments').insert({
-          contact_id: id, template_id: templateRow.id, template_name: templateRow.name,
-          template_version: templateRow.version, steps: templateSteps, current_step: 1, status: 'active', assigned_by: user.id,
+          contact_id: id, template_id: chosen.id, template_name: chosen.name,
+          template_version: chosen.version, steps, current_step: 1, status: 'active', assigned_by: user.id,
         });
       }
       await supabase.from('activity_log').insert({ actor_id: user.id, contact_id: id, activity_type: 'outreach_started', details: { started_from: 'contacts', note: 'Batch start', track: startTrack, template_id: startTrack === 'templated' ? startTemplateId : null } });
