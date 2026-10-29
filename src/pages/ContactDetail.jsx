@@ -602,27 +602,9 @@ export default function ContactDetail() {
             </div>
           )}
           <div style={{ gridColumn: '1 / -1' }}>
-            <InfoCard title="Pitch & Persona">
+            <InfoCard title="Persona & Campaign">
               <div style={{ padding: '4px 0' }}>
-                <textarea
-                  value={pitch}
-                  onChange={e => setPitch(e.target.value)}
-                  placeholder="What angle to use for this contact — this feeds directly into AI email generation…"
-                  rows={4}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #e0e0e0',
-                    fontSize: 13, resize: 'vertical', fontFamily: 'inherit', outline: 'none',
-                    color: '#333', boxSizing: 'border-box', lineHeight: 1.5,
-                    background: pitch ? '#fafffe' : '#fff' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                  <button onClick={savePitch} disabled={savingPitch}
-                    style={{ padding: '7px 18px', border: 'none', borderRadius: 8, fontSize: 13,
-                      fontWeight: 500, cursor: 'pointer',
-                      background: pitchSaved ? '#059669' : '#2563eb', color: '#fff', transition: 'background 0.2s' }}>
-                    {savingPitch ? 'Saving…' : pitchSaved ? '✓ Saved' : 'Save Pitch'}
-                  </button>
-                </div>
-              <div style={{marginTop:16}}>
+              <div>
                 <label style={{display:'block',fontSize:11,fontWeight:600,color:'#555',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.3px'}}>Buying Committee Persona</label>
                 <div style={{display:'flex',gap:8,alignItems:'center'}}>
                   <select value={persona} onChange={e => setPersona(e.target.value)}
