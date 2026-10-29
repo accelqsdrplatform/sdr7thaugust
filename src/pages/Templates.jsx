@@ -177,11 +177,11 @@ export default function Templates() {
   function updateStep(idx, field, val) {
     setEditSteps(s => s.map((st, i) => i === idx ? { ...st, [field]: val } : st));
   }
-  function insertMergeField(idx, field) {
+  function insertMergeField(idx, field, target = 'body') {
     const label = activeVariantTab[idx] || editSteps[idx]?.variants?.[0]?.label;
     setEditSteps(s => s.map((st, i) => i !== idx ? st : {
       ...st,
-      variants: st.variants.map(v => v.label === label ? { ...v, body: (v.body || '') + ' ' + field } : v),
+      variants: st.variants.map(v => v.label === label ? { ...v, [target]: (v[target] || '') + ' ' + field } : v),
     }));
   }
 
@@ -552,12 +552,18 @@ export default function Templates() {
                           <button onClick={() => removeVariant(i, activeVariant.label)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer' }}>Delete test</button>
                         )}
                       </div>
-                      <input value={activeVariant.subject} onChange={e => updateVariant(i, activeVariant.label, 'subject', e.target.value)} placeholder="Subject line" style={{ width: '100%', boxSizing: 'border-box', border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '7px 10px', fontSize: 13, marginBottom: 8 }} />
+                      <input value={activeVariant.subject} onChange={e => updateVariant(i, activeVariant.label, 'subject', e.target.value)} placeholder="Subject line" style={{ width: '100%', boxSizing: 'border-box', border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '7px 10px', fontSize: 13, marginBottom: 6 }} />
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: '#94a3b8', alignSelf: 'center' }}>Insert into subject:</span>
+                        {MERGE_FIELDS.map(f => (
+                          <span key={f} onClick={() => insertMergeField(i, f, 'subject')} style={{ fontSize: 10, background: '#f0f9ff', color: '#0369a1', padding: '2px 8px', borderRadius: 12, cursor: 'pointer', border: '1px solid #bae6fd' }}>{f}</span>
+                        ))}
+                      </div>
                       <textarea value={activeVariant.body} onChange={e => updateVariant(i, activeVariant.label, 'body', e.target.value)} placeholder="Email body" rows={5} style={{ width: '100%', boxSizing: 'border-box', border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '7px 10px', fontSize: 13, resize: 'vertical' }} />
                       <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, color: '#94a3b8', alignSelf: 'center' }}>Insert:</span>
                         {MERGE_FIELDS.map(f => (
-                          <span key={f} onClick={() => insertMergeField(i, f)} style={{ fontSize: 10, background: '#f0f9ff', color: '#0369a1', padding: '2px 8px', borderRadius: 12, cursor: 'pointer', border: '1px solid #bae6fd' }}>{f}</span>
+                          <span key={f} onClick={() => insertMergeField(i, f, 'body')} style={{ fontSize: 10, background: '#f0f9ff', color: '#0369a1', padding: '2px 8px', borderRadius: 12, cursor: 'pointer', border: '1px solid #bae6fd' }}>{f}</span>
                         ))}
                       </div>
                     </div>
