@@ -4,9 +4,9 @@ import { supabase } from '../../lib/supabase';
 
 const STAGE_ORDER = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'bounced'];
 const STAGE_COLORS = { Fresh: '#3b82f6', F1: '#10b981', F2: '#059669', F3: '#f59e0b', F4: '#ef4444', F5: '#dc2626', bounced: '#991b1b', unsubscribed: '#92400e' };
-const RESPONSE_ORDER = ['prospect', 'warm', 'not_interested'];
-const RESPONSE_LABELS = { prospect: 'Prospect', warm: 'Warm', not_interested: 'Not Interested' };
-const RESPONSE_COLORS = { prospect: '#059669', warm: '#d97706', not_interested: '#6b7280' };
+const RESPONSE_ORDER = ['prospect', 'warm', 'not_interested', 'negative'];
+const RESPONSE_LABELS = { prospect: 'Prospect', warm: 'Warm', not_interested: 'Not Interested', negative: 'Negative' };
+const RESPONSE_COLORS = { prospect: '#059669', warm: '#d97706', not_interested: '#6b7280', negative: '#dc2626' };
 const STAGE_LABELS = { unsubscribed: 'Negative' };
 
 const RANGE_OPTIONS = [
@@ -159,13 +159,6 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
       setDrillDown({ mode: 'response', title, groups, expandedOwnerId: null, loading: false });
       return;
     }
-    if (field === 'status' && value === 'unsubscribed') {
-      setDrillDown({ mode: 'response', title, groups: [], expandedOwnerId: null, loading: true });
-      const rows = await fetchDrillDownRows(ids, field, value);
-      const groups = groupDrillDownRowsByOwner(rows, ownerNameById);
-      setDrillDown({ mode: 'response', title, groups, expandedOwnerId: null, loading: false });
-      return;
-    }
     setDrillDown({ mode: 'status', title, contacts: [], total: null, loading: true });
     const [{ count: total }, rows] = await Promise.all([
       supabase.from('contacts').select('id', { count: 'exact', head: true }).in('owner_id', ids).eq(field, value),
@@ -198,7 +191,6 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
 
     const pc = {};
     STAGE_ORDER.forEach(s => { pc[s] = (breakdown?.stage_counts || {})[s] || 0; });
-    pc.unsubscribed = (breakdown?.stage_counts || {}).unsubscribed || 0;
     setPipelineCounts(pc);
     const rc = {};
     RESPONSE_ORDER.forEach(r => { rc[r] = (breakdown?.response_counts || {})[r] || 0; });
@@ -317,10 +309,6 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
                 <span style={{ fontWeight: 700, color: RESPONSE_COLORS[r] }}>{responseCounts[r] || 0}</span>
               </div>
             ))}
-            <div onClick={() => (pipelineCounts.unsubscribed || 0) > 0 && openDrillDown('status', 'unsubscribed', 'Negative -- Responses by type')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, cursor: (pipelineCounts.unsubscribed || 0) > 0 ? 'pointer' : 'default' }}>
-              <span style={{ color: '#555' }}>Negative</span>
-              <span style={{ fontWeight: 700, color: '#dc2626' }}>{pipelineCounts.unsubscribed || 0}</span>
-            </div>
           </div>
         </div>
       </div>
