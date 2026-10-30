@@ -24,7 +24,6 @@ const STAGE_COLORS = {
 };
 
 const RESPONSE_OPTIONS = [
-  { value: 'cold',          label: '🔵 Cold',          bg: '#e0f2fe', color: '#0369a1' },
   { value: 'warm',          label: '🟡 Warm',          bg: '#fef9c3', color: '#854d0e' },
   { value: 'prospect',      label: '🟢 Prospect',      bg: '#d1fae5', color: '#065f46' },
   { value: 'negative',      label: '🔴 Negative',      bg: '#fee2e2', color: '#991b1b' },
