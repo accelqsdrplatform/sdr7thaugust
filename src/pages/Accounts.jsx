@@ -91,6 +91,7 @@ const STAGE_COLORS = {
   bounced:      { bg: '#fce7f3', color: '#9d174d' },
   unsubscribed: { bg: '#f3f4f6', color: '#6b7280' }, cooling_off: { bg: '#f1f5f9', color: '#64748b' },
 };
+const STAGE_LABELS = { unsubscribed: 'Negative' };
 const AVATAR_PALETTE = ['#2563eb','#7c3aed','#059669','#d97706','#dc2626','#0891b2','#9333ea','#16a34a','#c2410c','#0f766e'];
 const SIGNAL_TYPE_COLORS = {
   'Layoffs':           { bg: '#fee2e2', color: '#dc2626' },
@@ -2023,7 +2024,7 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                     return (
                       <div key={s} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                         <div style={{ fontSize: 16, fontWeight: 700, color: sc2.color }}>{cnt}</div>
-                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 10, background: sc2.bg, color: sc2.color }}>{s}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 10, background: sc2.bg, color: sc2.color }}>{STAGE_LABELS[s] || s}</span>
                       </div>
                     );
                   })}
