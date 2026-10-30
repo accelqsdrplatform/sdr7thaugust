@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 const STAGES = ['Fresh','F1','F2','F3','F4','F5'];
 const OUTCOMES = ['won','lost','bounced','unsubscribed'];
 const ALL_STATUSES = [...STAGES, ...OUTCOMES];
+const STATUS_LABELS = { unsubscribed: 'Negative' };
 
 const STAGE_COLORS = {
   Fresh:        { bg: '#e0f2fe', color: '#0369a1' },
@@ -26,7 +27,6 @@ const STAGE_COLORS = {
 const RESPONSE_OPTIONS = [
   { value: 'warm',          label: '🟡 Warm',          bg: '#fef9c3', color: '#854d0e' },
   { value: 'prospect',      label: '🟢 Prospect',      bg: '#d1fae5', color: '#065f46' },
-  { value: 'negative',      label: '🔴 Negative',      bg: '#fee2e2', color: '#991b1b' },
   { value: 'not_interested',label: '⬜ Not interested', bg: '#f1f5f9', color: '#475569' },
   { value: 'bounce',        label: '⛔ Bounce',        bg: '#fee2e2', color: '#991b1b' },
 ];
@@ -377,7 +377,7 @@ export default function ContactDetail() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                 <h1 style={{ fontSize: 18, fontWeight: 600, color: '#111', margin: 0 }}>{contactName}</h1>
                 <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, background: sc.bg, color: sc.color, fontWeight: 700 }}>
-                  {contact.status}
+                  {STATUS_LABELS[contact.status] || contact.status}
                 </span>
                 {contact.bounced && (
                   <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, background: '#fee2e2', color: '#991b1b', fontWeight: 700 }}>BOUNCED</span>
@@ -414,7 +414,7 @@ export default function ContactDetail() {
               <div style={{ display: 'flex', gap: 8 }}>
                 <select value={contact.status} onChange={e => updateStatus(e.target.value)}
                   style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid #e0e0e0', cursor: 'pointer', color: '#333', background: '#fff' }}>
-                  {ALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {ALL_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
                 </select>
                 {nextStage && (
                   <button onClick={advanceStage} disabled={advancing}
@@ -584,7 +584,7 @@ export default function ContactDetail() {
               }} />
           </InfoCard>
           <InfoCard title="Outreach status">
-            <InfoRow label="Stage" value={contact.status} />
+            <InfoRow label="Stage" value={STATUS_LABELS[contact.status] || contact.status} />
             <InfoRow label="Response" value={responseInfo?.label} />
             <InfoRow label="Last contacted" value={contact.last_contacted ? new Date(contact.last_contacted).toLocaleDateString() : null} />
             <InfoRow label="Next follow-up" value={contact.next_followup ? new Date(contact.next_followup).toLocaleDateString() : null} />
