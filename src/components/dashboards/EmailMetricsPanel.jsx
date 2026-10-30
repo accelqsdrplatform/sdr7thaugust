@@ -3,9 +3,9 @@ import { supabase } from '../../lib/supabase';
 
 const STAGE_ORDER = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'bounced', 'unsubscribed'];
 const STAGE_COLORS = { Fresh: '#3b82f6', F1: '#10b981', F2: '#059669', F3: '#f59e0b', F4: '#ef4444', F5: '#dc2626', bounced: '#991b1b', unsubscribed: '#92400e' };
-const RESPONSE_ORDER = ['prospect', 'warm', 'cold', 'not_interested', 'negative'];
-const RESPONSE_LABELS = { prospect: 'Prospect', warm: 'Warm', cold: 'Cold', not_interested: 'Not Interested', negative: 'Negative' };
-const RESPONSE_COLORS = { prospect: '#059669', warm: '#d97706', cold: '#0369a1', not_interested: '#6b7280', negative: '#dc2626' };
+const RESPONSE_ORDER = ['prospect', 'warm', 'not_interested', 'negative'];
+const RESPONSE_LABELS = { prospect: 'Prospect', warm: 'Warm', not_interested: 'Not Interested', negative: 'Negative' };
+const RESPONSE_COLORS = { prospect: '#059669', warm: '#d97706', not_interested: '#6b7280', negative: '#dc2626' };
 
 const RANGE_OPTIONS = [
   { key: 'today', label: 'Today' },
