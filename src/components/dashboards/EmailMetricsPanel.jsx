@@ -54,6 +54,7 @@ function StatCard({ label, value, sub, color }) {
 // metric definitions stay identical everywhere they appear.
 export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, defaultView }) {
   const teamIds = (teamMembers || []).map(m => m.id);
+  const ownerNameById = Object.fromEntries((teamMembers || []).map(m => [m.id, m.name]));
   const [range, setRange] = useState(7);
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -99,7 +100,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
         : Promise.resolve({ count: 0 }),
       // Snapshot distribution of the scoped book right now -- not date-ranged,
       // since stage/response_type are current-state fields, not dated events.
-      supabase.from('contacts').select('id, first_name, last_name, company, title, status, response_type').in('owner_id', ids),
+      supabase.from('contacts').select('id, first_name, last_name, company, title, status, response_type, owner_id').in('owner_id', ids),
       supabase.from('emails').select('sent_at, stage').in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso),
     ]);
     const accountsAdded = accountsCountRes.count || 0;
@@ -278,6 +279,9 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
                   <div key={c.id} onClick={() => { setDrillDown(null); navigate('/contacts/' + c.id); }} style={{ display: 'block', padding: '8px 10px', borderRadius: 7, border: '1px solid #f0f0ee', cursor: 'pointer' }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#222' }}>{[c.first_name, c.last_name].filter(Boolean).join(' ') || '(no name)'}</div>
                     <div style={{ fontSize: 12, color: '#888' }}>{[c.title, c.company].filter(Boolean).join(' at ')}</div>
+                    {ownerNameById[c.owner_id] && (
+                      <div style={{ fontSize: 11, color: '#2563eb', fontWeight: 600, marginTop: 2 }}>Owner: {ownerNameById[c.owner_id]}</div>
+                    )}
                   </div>
                 ))}
               </div>
