@@ -5,7 +5,6 @@ import { useAuth } from '../context/AuthContext';
 
 const RESPONSE_STYLE = {
   cold:          { bg: '#f1f5f9', color: '#475569', label: 'Cold' },
-  negative:      { bg: '#fee2e2', color: '#991b1b', label: 'Negative' },
   not_interested:{ bg: '#fef3c7', color: '#92400e', label: 'Not Interested' },
   warm:          { bg: '#fef9c3', color: '#854d0e', label: 'Warm' },
   prospect:      { bg: '#dcfce7', color: '#15803d', label: 'Prospect' },
@@ -23,8 +22,9 @@ const STATUS_STYLE = {
   bounced:      { bg: '#fee2e2', color: '#991b1b' },
   unsubscribed: { bg: '#fef3c7', color: '#92400e' },
 };
+const STATUS_LABELS = { unsubscribed: 'Negative' };
 
-const RESPONSE_ORDER = ['prospect', 'warm', 'cold', 'not_interested', 'negative'];
+const RESPONSE_ORDER = ['prospect', 'warm', 'cold', 'not_interested'];
 
 function fmt(d) { return d ? new Date(d).toLocaleDateString() : '—'; }
 function contactName(c) { return [c.first_name, c.last_name].filter(Boolean).join(' ') || c.email || '—'; }
@@ -188,7 +188,7 @@ export default function Responses() {
                             <td style={{ padding: '10px 14px', color: '#666' }}>{c.email || '—'}</td>
                             <td style={{ padding: '10px 14px', color: '#666' }}>{c.title || '—'}</td>
                             <td style={{ padding: '10px 14px' }}>
-                              <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, background: ss.bg, color: ss.color, fontWeight: 600 }}>{c.status}</span>
+                              <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, background: ss.bg, color: ss.color, fontWeight: 600 }}>{STATUS_LABELS[c.status] || c.status}</span>
                             </td>
                             <td style={{ padding: '10px 14px', color: '#888', fontSize: 12 }}>{fmt(c.created_at)}</td>
                             <td style={{ padding: '10px 14px', color: '#888', fontSize: 12 }}>{fmt(c.last_touchpoint_date)}</td>
