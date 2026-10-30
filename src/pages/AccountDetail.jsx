@@ -87,24 +87,29 @@ export default function AccountDetail() {
 
   async function fetchAll() {
     setLoading(true);
-    const [{ data: acc }, { data: cts }, { data: ints }, { data: allAccs }] = await Promise.all([
+    const [{ data: acc }, { data: ints }] = await Promise.all([
       supabase.from('accounts').select('*').eq('id', id).single(),
-      supabase.from('contacts').select('*').eq('account_id', id).order('created_at', { ascending: false }),
       supabase.from('account_intents').select('*, profiles:created_by(full_name)').eq('account_id', id).order('detected_at', { ascending: false }),
-      supabase.from('accounts').select('name'),
     ]);
+
+    // Paginated -- a single strategic account can have more than 1000
+    // contacts, and the org can have more than 1000 accounts total, either
+    // of which would otherwise silently truncate past Supabase's row cap.
+    const cts = []; { let o = 0; for (;;) { const { data: d } = await supabase.from('contacts').select('*').eq('account_id', id).order('created_at', { ascending: false }).range(o, o + 999); if (!d?.length) break; cts.push(...d); if (d.length < 1000) break; o += 1000; } }
+    const allAccs = []; { let o = 0; for (;;) { const { data: d } = await supabase.from('accounts').select('name').range(o, o + 999); if (!d?.length) break; allAccs.push(...d); if (d.length < 1000) break; o += 1000; } }
+
     setAccount(acc);
     setEditData(acc || {});
-    setContacts(cts || []);
+    setContacts(cts);
     setIntents(ints || []);
-    const ctIds = (cts || []).map(c => c.id);
+    const ctIds = cts.map(c => c.id);
     if (ctIds.length > 0) {
       const { count } = await supabase.from('emails').select('id', { count: 'exact', head: true }).in('contact_id', ctIds);
       setEmailsSentCount(count || 0);
     } else {
       setEmailsSentCount(0);
     }
-    setAllAccountNames((allAccs || []).map(a => a.name.toLowerCase().trim()));
+    setAllAccountNames(allAccs.map(a => a.name.toLowerCase().trim()));
     if (acc?.name) {
       await fetchCompanyNotes(acc.name);
     }
