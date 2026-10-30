@@ -688,7 +688,8 @@ export default function Accounts() {
                         const notYetSentCt = ctcs.filter(c => c.status === 'Fresh' && !c.next_followup).length;
                         const queuedCt = ctcs.filter(c => c.status === 'Fresh' && c.next_followup).length;
                         const contactedCt = ctcs.length - notYetSentCt - queuedCt;
-                        return `${ctcs.length} contact${ctcs.length !== 1 ? 's' : ''} · ${contactedCt} contacted · ${queuedCt} queued · ${notYetSentCt} not yet sent`;
+                        const notYetSentPct = ctcs.length ? Math.round((notYetSentCt / ctcs.length) * 100) : 0;
+                        return `${ctcs.length} contact${ctcs.length !== 1 ? 's' : ''} · ${contactedCt} contacted · ${queuedCt} queued · ${notYetSentCt} not yet sent (${notYetSentPct}%)`;
                       })()}
                     </div>
                   </div>
