@@ -243,8 +243,9 @@ export default function Contacts() {
     if (jobChangeFilter === 'yes') q = q.eq('job_change_detected', true);
 
     if (listFilter) {
-      const { data: lc } = await supabase.from('contact_lists').select('contact_id').eq('list_id', listFilter);
-      const ids = (lc || []).map(r => r.contact_id);
+      // Paginated -- a large campaign list can exceed 1000 membership rows.
+      const lc = []; { let o = 0; for (;;) { const { data: d } = await supabase.from('contact_lists').select('contact_id').eq('list_id', listFilter).range(o, o + 999); if (!d?.length) break; lc.push(...d); if (d.length < 1000) break; o += 1000; } }
+      const ids = lc.map(r => r.contact_id);
       if (ids.length === 0) {
         setContacts([]);
         setTotalCount(0);
@@ -311,7 +312,10 @@ export default function Contacts() {
     // Load all of this user's contacts — grouped by email where present,
     // and by a normalized name+company fallback for contacts with no email
     // on file (those were invisible to the old email-only dupe scan).
-    const { data } = await supabase.from('contacts').select('*').eq('owner_id', user.id).order('created_at', { ascending: true });
+    // Paginated -- a single rep's book can exceed Supabase's default
+    // 1000-row cap at scale, which would otherwise silently miss
+    // duplicates past the first 1000 contacts.
+    const data = []; { let o = 0; for (;;) { const { data: d } = await supabase.from('contacts').select('*').eq('owner_id', user.id).order('created_at', { ascending: true }).range(o, o + 999); if (!d?.length) break; data.push(...d); if (d.length < 1000) break; o += 1000; } }
     const grouped = {};
     (data || []).forEach(c => {
       const email = (c.email || '').trim().toLowerCase();
@@ -362,8 +366,9 @@ export default function Contacts() {
   async function applyListFilter(listId) {
     setListFilter(listId);
     if (!listId) { setListContactIds(new Set()); return; }
-    const { data } = await supabase.from('contact_lists').select('contact_id').eq('list_id', listId);
-    setListContactIds(new Set((data || []).map(r => r.contact_id)));
+    // Paginated -- same large-list reasoning as the listFilter block above.
+    const data = []; { let o = 0; for (;;) { const { data: d } = await supabase.from('contact_lists').select('contact_id').eq('list_id', listId).range(o, o + 999); if (!d?.length) break; data.push(...d); if (d.length < 1000) break; o += 1000; } }
+    setListContactIds(new Set(data.map(r => r.contact_id)));
   }
 
   async function updateStatus(id, status) { if (status === 'bounced') { await markContactBounced(id, user.id); fetchContacts(); return; }
