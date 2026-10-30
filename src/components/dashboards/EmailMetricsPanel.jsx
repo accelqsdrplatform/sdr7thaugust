@@ -17,6 +17,23 @@ const RANGE_OPTIONS = [
   { key: 90, label: '90d' },
 ];
 
+// Supabase caps a single select at 1000 rows -- for Team view, scoping by
+// many owner_ids on a multi-thousand-row contacts table silently truncated
+// results to the first 1000, undercounting pipeline/response breakdowns.
+// This pages through everything instead.
+async function fetchAllContactRows(select, ids) {
+  const rows = [];
+  let from = 0;
+  for (;;) {
+    const { data } = await supabase.from('contacts').select(select).in('owner_id', ids).range(from, from + 999);
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return rows;
+}
+
 function computeRange(range, customFrom, customTo) {
   const now = new Date();
   if (range === 'custom' && customFrom && customTo) {
@@ -83,11 +100,11 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
     const startIso = start.toISOString(), endIso = end.toISOString();
     const ids = scopeIds && scopeIds.length ? scopeIds : ['00000000-0000-0000-0000-000000000000'];
 
-    const [{ count: emailsSent }, { count: responses }, { count: contactsAdded }, { data: contactAccRows }] = await Promise.all([
+    const [{ count: emailsSent }, { count: responses }, { count: contactsAdded }, contactAccRows] = await Promise.all([
       supabase.from('emails').select('id', { count: 'exact', head: true }).in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso),
       supabase.from('email_responses').select('id', { count: 'exact', head: true }).in('owner_id', ids).gte('responded_at', startIso).lte('responded_at', endIso),
       supabase.from('contacts').select('id', { count: 'exact', head: true }).in('owner_id', ids).gte('created_at', startIso).lte('created_at', endIso),
-      supabase.from('contacts').select('account_id').in('owner_id', ids).not('account_id', 'is', null),
+      fetchAllContactRows('account_id', ids),
     ]);
 
     const accIds = [...new Set((contactAccRows || []).map(c => c.account_id).filter(Boolean))];
@@ -100,7 +117,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
         : Promise.resolve({ count: 0 }),
       // Snapshot distribution of the scoped book right now -- not date-ranged,
       // since stage/response_type are current-state fields, not dated events.
-      supabase.from('contacts').select('id, first_name, last_name, company, title, status, response_type, owner_id').in('owner_id', ids),
+      fetchAllContactRows('id, first_name, last_name, company, title, status, response_type, owner_id', ids).then(data => ({ data })),
       supabase.from('emails').select('sent_at, stage').in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso),
     ]);
     const accountsAdded = accountsCountRes.count || 0;
