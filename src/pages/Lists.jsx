@@ -146,14 +146,26 @@ export default function Lists() {
   }
 
   async function fetchListContacts(listId) {
-    const { data: cls } = await supabase
-      .from('contact_lists')
-      .select('*, contacts(*)')
-      .eq('list_id', listId)
-      .order('added_date', { ascending: false });
+    // Paginated -- a campaign list can grow past Supabase's 1000-row return
+    // cap, which used to silently truncate the list view and the ids handed
+    // to export/bulk-push actions downstream.
+    const rows = [];
+    let from = 0;
+    for (;;) {
+      const { data } = await supabase
+        .from('contact_lists')
+        .select('*, contacts(*)')
+        .eq('list_id', listId)
+        .order('added_date', { ascending: false })
+        .range(from, from + 999);
+      if (!data || data.length === 0) break;
+      rows.push(...data);
+      if (data.length < 1000) break;
+      from += 1000;
+    }
     setListContacts(prev => ({
       ...prev,
-      [listId]: (cls || []).map(cl => ({ cl, contact: cl.contacts })),
+      [listId]: rows.map(cl => ({ cl, contact: cl.contacts })),
     }));
   }
 
