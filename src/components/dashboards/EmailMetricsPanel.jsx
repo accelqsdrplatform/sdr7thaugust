@@ -39,6 +39,56 @@ async function fetchDrillDownRows(ids, field, value) {
   return rows.slice(0, DRILLDOWN_CAP);
 }
 
+// Response-type drill-down: sources from email_responses (the same table the
+// top-line "Responses received" stat and the per-type counts come from) and
+// is scoped to the panel's current date range, so the drill-down list always
+// matches the number shown on the card -- unlike a plain contacts.response_type
+// lookup, which only reflects a contact's *current* classification and ignores
+// the date range entirely.
+async function fetchResponseDrillDownRows(ids, responseType, startIso, endIso) {
+  const responses = [];
+  let from = 0;
+  for (;;) {
+    const { data } = await supabase
+      .from('email_responses')
+      .select('id, contact_id, owner_id, responded_at')
+      .in('owner_id', ids)
+      .eq('response_type', responseType)
+      .gte('responded_at', startIso)
+      .lte('responded_at', endIso)
+      .range(from, from + 999);
+    if (!data || data.length === 0) break;
+    responses.push(...data);
+    if (responses.length >= DRILLDOWN_CAP || data.length < 1000) break;
+    from += 1000;
+  }
+  const capped = responses.slice(0, DRILLDOWN_CAP);
+  const contactIds = [...new Set(capped.map(r => r.contact_id).filter(Boolean))];
+  const contactById = {};
+  for (let i = 0; i < contactIds.length; i += 500) {
+    const chunk = contactIds.slice(i, i + 500);
+    const { data } = await supabase.from('contacts').select('id, first_name, last_name, company, title').in('id', chunk);
+    (data || []).forEach(c => { contactById[c.id] = c; });
+  }
+  return capped.map(r => ({
+    id: r.id,
+    contact_id: r.contact_id,
+    owner_id: r.owner_id,
+    responded_at: r.responded_at,
+    ...(contactById[r.contact_id] || {}),
+  }));
+}
+
+function groupDrillDownRowsByOwner(rows, ownerNameById) {
+  const map = new Map();
+  for (const r of rows) {
+    const key = r.owner_id || 'unknown';
+    if (!map.has(key)) map.set(key, { ownerId: key, ownerName: ownerNameById[key] || 'Unassigned', contacts: [] });
+    map.get(key).contacts.push(r);
+  }
+  return Array.from(map.values()).sort((a, b) => b.contacts.length - a.contacts.length);
+}
+
 function computeRange(range, customFrom, customTo) {
   const now = new Date();
   if (range === 'custom' && customFrom && customTo) {
@@ -99,13 +149,21 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
   useEffect(() => { load(); }, [range, customFrom, customTo, viewMode, selectedMemberId, JSON.stringify(ownIds), JSON.stringify(teamIds)]);
 
   async function openDrillDown(field, value, title) {
-    setDrillDown({ title, contacts: [], total: null, loading: true });
     const ids = scopeIds && scopeIds.length ? scopeIds : ['00000000-0000-0000-0000-000000000000'];
+    if (field === 'response_type') {
+      setDrillDown({ mode: 'response', title, groups: [], expandedOwnerId: null, loading: true });
+      const { start, end } = computeRange(range, customFrom, customTo);
+      const rows = await fetchResponseDrillDownRows(ids, value, start.toISOString(), end.toISOString());
+      const groups = groupDrillDownRowsByOwner(rows, ownerNameById);
+      setDrillDown({ mode: 'response', title, groups, expandedOwnerId: null, loading: false });
+      return;
+    }
+    setDrillDown({ mode: 'status', title, contacts: [], total: null, loading: true });
     const [{ count: total }, rows] = await Promise.all([
       supabase.from('contacts').select('id', { count: 'exact', head: true }).in('owner_id', ids).eq(field, value),
       fetchDrillDownRows(ids, field, value),
     ]);
-    setDrillDown({ title, contacts: rows, total: total || 0, loading: false });
+    setDrillDown({ mode: 'status', title, contacts: rows, total: total || 0, loading: false });
   }
 
   async function load() {
@@ -286,11 +344,40 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
         <div onClick={() => setDrillDown(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 10, padding: 20, width: 420, maxHeight: '70vh', overflowY: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>{drillDown.title}</div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>
+                {drillDown.mode === 'response' && drillDown.expandedOwnerId
+                  ? (drillDown.groups.find(g => g.ownerId === drillDown.expandedOwnerId)?.ownerName || 'Unassigned')
+                  : drillDown.title}
+              </div>
               <span onClick={() => setDrillDown(null)} style={{ cursor: 'pointer', color: '#888', fontSize: 18, lineHeight: 1 }}>&times;</span>
             </div>
+            {drillDown.mode === 'response' && drillDown.expandedOwnerId && (
+              <div onClick={() => setDrillDown({ ...drillDown, expandedOwnerId: null })} style={{ cursor: 'pointer', color: '#2563eb', fontSize: 12, fontWeight: 600, marginBottom: 10 }}>&larr; Back to all reps</div>
+            )}
             {drillDown.loading ? (
               <div style={{ color: '#888', fontSize: 13 }}>Loading...</div>
+            ) : drillDown.mode === 'response' ? (
+              drillDown.groups.length === 0 ? (
+                <div style={{ color: '#888', fontSize: 13 }}>No responses found.</div>
+              ) : drillDown.expandedOwnerId ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {(drillDown.groups.find(g => g.ownerId === drillDown.expandedOwnerId)?.contacts || []).map(c => (
+                    <div key={c.id} onClick={() => { setDrillDown(null); navigate('/contacts/' + c.contact_id); }} style={{ display: 'block', padding: '8px 10px', borderRadius: 7, border: '1px solid #f0f0ee', cursor: 'pointer' }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#222' }}>{[c.first_name, c.last_name].filter(Boolean).join(' ') || '(no name)'}</div>
+                      <div style={{ fontSize: 12, color: '#888' }}>{[c.title, c.company].filter(Boolean).join(' at ')}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {drillDown.groups.map(g => (
+                    <div key={g.ownerId} onClick={() => setDrillDown({ ...drillDown, expandedOwnerId: g.ownerId })} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: 7, border: '1px solid #f0f0ee', cursor: 'pointer' }}>
+                      <span style={{ fontSize: 13, color: '#222' }}>{g.ownerName}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#2563eb' }}>{g.contacts.length}</span>
+                    </div>
+                  ))}
+                </div>
+              )
             ) : drillDown.contacts.length === 0 ? (
               <div style={{ color: '#888', fontSize: 13 }}>No contacts found.</div>
             ) : (
