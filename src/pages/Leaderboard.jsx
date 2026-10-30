@@ -12,27 +12,30 @@ export default function Leaderboard() {
 
   async function load() {
     setLoading(true);
-    const [{ data: sdrs }, { data: c }] = await Promise.all([
-      supabase.from('org_hierarchy').select('*').eq('role', 'owner'),
-      supabase.from('contacts').select('owner_id, status, bounced, created_at'),
-    ]);
+    const { data: sdrs } = await supabase.from('org_hierarchy').select('*').eq('role', 'owner');
+    const ownerIds = (sdrs || []).map(s => s.user_id);
+    // Per-owner counts computed in Postgres via team_stats_by_owner() instead
+    // of pulling every contact in the org into the browser -- the old
+    // unbounded fetch silently truncated past Supabase's 1000-row cap and
+    // would ship the entire contacts table to the browser at scale.
+    const { data: statsRows } = ownerIds.length
+      ? await supabase.rpc('team_stats_by_owner', { ids: ownerIds })
+      : { data: [] };
+    const statsByOwner = Object.fromEntries((statsRows || []).map(r => [r.owner_id, r]));
 
-    const contacts = c || [];
     const board = (sdrs || []).map(s => {
-      const sc = contacts.filter(x => x.owner_id === s.user_id);
-      const active = sc.filter(x => !x.bounced).length;
-      const replied = sc.filter(x => ['replied','meeting','won'].includes(x.status)).length;
+      const st = statsByOwner[s.user_id] || { active: 0, replies: 0, meetings: 0, won: 0, bounced: 0 };
       return {
         id: s.id,
         name: s.full_name,
         region: s.region,
         user_id: s.user_id,
-        active,
-        replied,
-        meetings: sc.filter(x => x.status === 'meeting').length,
-        won: sc.filter(x => x.status === 'won').length,
-        bounced: sc.filter(x => x.bounced).length,
-        rate: active ? Math.round((replied / active) * 100) : 0,
+        active: st.active,
+        replied: st.replies,
+        meetings: st.meetings,
+        won: st.won,
+        bounced: st.bounced,
+        rate: st.active ? Math.round((st.replies / st.active) * 100) : 0,
       };
     }).sort((a, b) => b.replied - a.replied || b.won - a.won);
 
