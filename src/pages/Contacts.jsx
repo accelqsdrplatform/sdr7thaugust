@@ -375,6 +375,7 @@ export default function Contacts() {
   async function updateStatus(id, status) { if (status === 'bounced') { await markContactBounced(id, user.id); fetchContacts(); return; }
     await supabase.from('contacts').update({ status, last_touchpoint_date: new Date().toISOString() }).eq('id', id);
     await supabase.from('activity_log').insert({ actor_id: user.id, contact_id: id, activity_type: 'status_changed', details: { status } });
+    if (status === 'unsubscribed') await logEmailResponse(id, user.id, 'negative');
     fetchContacts();
   }
 
