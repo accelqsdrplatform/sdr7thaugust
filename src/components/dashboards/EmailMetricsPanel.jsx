@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
 const STAGE_ORDER = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'bounced', 'unsubscribed'];
@@ -65,6 +66,9 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [dailyEmails, setDailyEmails] = useState([]);
   const [dailyStageCols, setDailyStageCols] = useState([]);
+  const navigate = useNavigate();
+  const [bookContactsList, setBookContactsList] = useState([]);
+  const [drillDown, setDrillDown] = useState(null); // { title, contacts }
 
   const scopeIds = (showToggle && viewMode === 'team')
     ? (selectedMemberId ? [selectedMemberId] : (teamIds && teamIds.length ? teamIds : ownIds))
@@ -95,11 +99,12 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
         : Promise.resolve({ count: 0 }),
       // Snapshot distribution of the scoped book right now -- not date-ranged,
       // since stage/response_type are current-state fields, not dated events.
-      supabase.from('contacts').select('status, response_type').in('owner_id', ids),
+      supabase.from('contacts').select('id, first_name, last_name, company, title, status, response_type').in('owner_id', ids),
       supabase.from('emails').select('sent_at, stage').in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso),
     ]);
     const accountsAdded = accountsCountRes.count || 0;
     const bookContacts = bookContactsRes.data;
+    setBookContactsList(bookContacts || []);
     const dailyRows = dailyRowsRes.data;
 
     setStats({ emailsSent: emailsSent || 0, responses: responses || 0, contactsAdded: contactsAdded || 0, accountsAdded });
@@ -210,7 +215,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
           <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pipeline by stage</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {STAGE_ORDER.map(s => (
-              <div key={s} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
+              <div key={s} onClick={() => (pipelineCounts[s] || 0) > 0 && setDrillDown({ title: s + ' -- Pipeline by stage', contacts: bookContactsList.filter(c => c.status === s) })} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, cursor: (pipelineCounts[s] || 0) > 0 ? 'pointer' : 'default' }}>
                 <span style={{ color: '#555' }}>{s}</span>
                 <span style={{ fontWeight: 700, color: STAGE_COLORS[s] }}>{pipelineCounts[s] || 0}</span>
               </div>
@@ -221,7 +226,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
           <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Responses by type</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {RESPONSE_ORDER.map(r => (
-              <div key={r} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
+              <div key={r} onClick={() => (responseCounts[r] || 0) > 0 && setDrillDown({ title: RESPONSE_LABELS[r] + ' -- Responses by type', contacts: bookContactsList.filter(c => c.response_type === r) })} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, cursor: (responseCounts[r] || 0) > 0 ? 'pointer' : 'default' }}>
                 <span style={{ color: '#555' }}>{RESPONSE_LABELS[r]}</span>
                 <span style={{ fontWeight: 700, color: RESPONSE_COLORS[r] }}>{responseCounts[r] || 0}</span>
               </div>
@@ -255,6 +260,29 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+      {drillDown && (
+        <div onClick={() => setDrillDown(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 10, padding: 20, width: 420, maxHeight: '70vh', overflowY: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{drillDown.title}</div>
+              <span onClick={() => setDrillDown(null)} style={{ cursor: 'pointer', color: '#888', fontSize: 18, lineHeight: 1 }}>&times;</span>
+            </div>
+            {drillDown.contacts.length === 0 ? (
+              <div style={{ color: '#888', fontSize: 13 }}>No contacts found.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {drillDown.contacts.map(c => (
+                  <div key={c.id} onClick={() => { setDrillDown(null); navigate('/contacts/' + c.id); }} style={{ display: 'block', padding: '8px 10px', borderRadius: 7, border: '1px solid #f0f0ee', cursor: 'pointer' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#222' }}>{[c.first_name, c.last_name].filter(Boolean).join(' ') || '(no name)'}</div>
+                    <div style={{ fontSize: 12, color: '#888' }}>{[c.title, c.company].filter(Boolean).join(' at ')}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ marginTop: 12, fontSize: 11, color: '#aaa' }}>This shows who is currently classified this way -- the platform doesn't store the actual reply text, only the classification a rep assigns.</div>
           </div>
         </div>
       )}
