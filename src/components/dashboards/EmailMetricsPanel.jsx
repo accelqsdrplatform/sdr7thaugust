@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
-const STAGE_ORDER = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'bounced'];
-const STAGE_COLORS = { Fresh: '#3b82f6', F1: '#10b981', F2: '#059669', F3: '#f59e0b', F4: '#ef4444', F5: '#dc2626', bounced: '#991b1b', unsubscribed: '#92400e' };
+const STAGE_ORDER = ['freshYetToContact', 'Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'bounced'];
+const STAGE_COLORS = { freshYetToContact: '#94a3b8', Fresh: '#3b82f6', F1: '#10b981', F2: '#059669', F3: '#f59e0b', F4: '#ef4444', F5: '#dc2626', bounced: '#991b1b', unsubscribed: '#92400e' };
 const RESPONSE_ORDER = ['prospect', 'warm', 'not_interested', 'negative'];
 const RESPONSE_LABELS = { prospect: 'Prospect', warm: 'Warm', not_interested: 'Not Interested', negative: 'Negative' };
 const RESPONSE_COLORS = { prospect: '#059669', warm: '#d97706', not_interested: '#6b7280', negative: '#dc2626' };
-const STAGE_LABELS = { unsubscribed: 'Negative' };
+const STAGE_LABELS = { unsubscribed: 'Negative', freshYetToContact: 'Yet to Contact' };
 
 const RANGE_OPTIONS = [
   { key: 'today', label: 'Today' },
@@ -27,11 +27,13 @@ const RANGE_OPTIONS = [
 // the person clicked (not the whole book), and capped so a bucket with
 // lakhs of contacts doesn't try to load them all into a dialog.
 const DRILLDOWN_CAP = 500;
-async function fetchDrillDownRows(ids, field, value) {
+async function fetchDrillDownRows(ids, field, value, applyExtra) {
   const rows = [];
   let from = 0;
   for (;;) {
-    const { data } = await supabase.from('contacts').select('id, first_name, last_name, company, title, owner_id').in('owner_id', ids).eq(field, value).range(from, from + 999);
+    let q = supabase.from('contacts').select('id, first_name, last_name, company, title, owner_id').in('owner_id', ids).eq(field, value);
+    if (applyExtra) q = applyExtra(q);
+    const { data } = await q.range(from, from + 999);
     if (!data || data.length === 0) break;
     rows.push(...data);
     if (rows.length >= DRILLDOWN_CAP || data.length < 1000) break;
@@ -159,6 +161,17 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
       setDrillDown({ mode: 'response', title, groups, expandedOwnerId: null, loading: false });
       return;
     }
+    if (field === 'status' && (value === 'Fresh' || value === 'freshYetToContact')) {
+      const queued = value === 'Fresh';
+      const applyExtra = q => (queued ? q.not('next_followup', 'is', null) : q.is('next_followup', null));
+      setDrillDown({ mode: 'status', title, contacts: [], total: null, loading: true });
+      const [{ count: total }, rows] = await Promise.all([
+        applyExtra(supabase.from('contacts').select('id', { count: 'exact', head: true }).in('owner_id', ids).eq('status', 'Fresh')),
+        fetchDrillDownRows(ids, 'status', 'Fresh', applyExtra),
+      ]);
+      setDrillDown({ mode: 'status', title, contacts: rows, total: total || 0, loading: false });
+      return;
+    }
     setDrillDown({ mode: 'status', title, contacts: [], total: null, loading: true });
     const [{ count: total }, rows] = await Promise.all([
       supabase.from('contacts').select('id', { count: 'exact', head: true }).in('owner_id', ids).eq(field, value),
@@ -173,7 +186,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
     const startIso = start.toISOString(), endIso = end.toISOString();
     const ids = scopeIds && scopeIds.length ? scopeIds : ['00000000-0000-0000-0000-000000000000'];
 
-    const [{ count: emailsSent }, { count: responses }, { count: contactsAdded }, breakdownRes, dailyRowsRes] = await Promise.all([
+    const [{ count: emailsSent }, { count: responses }, { count: contactsAdded }, breakdownRes, dailyRowsRes, { count: freshYetToContact }] = await Promise.all([
       supabase.from('emails').select('id', { count: 'exact', head: true }).in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso),
       supabase.from('email_responses').select('id', { count: 'exact', head: true }).in('owner_id', ids).in('response_type', RESPONSE_ORDER).gte('responded_at', startIso).lte('responded_at', endIso),
       supabase.from('contacts').select('id', { count: 'exact', head: true }).in('owner_id', ids).gte('created_at', startIso).lte('created_at', endIso),
@@ -182,6 +195,10 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
       // Stays a single fast round trip no matter how large contacts gets.
       supabase.rpc('email_metrics_breakdown', { ids, start_ts: startIso, end_ts: endIso }).single(),
       supabase.from('emails').select('sent_at, stage').in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso),
+      // Fresh splits into "Yet to Contact" (never enrolled -- no next_followup
+      // set) vs. "Fresh" (enrolled and waiting in the Follow-up Queue), so the
+      // pipeline card matches what the queue actually shows.
+      supabase.from('contacts').select('id', { count: 'exact', head: true }).in('owner_id', ids).eq('status', 'Fresh').is('next_followup', null),
     ]);
     const breakdown = breakdownRes.data;
     const accountsAdded = breakdown?.accounts_added || 0;
@@ -191,6 +208,8 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
 
     const pc = {};
     STAGE_ORDER.forEach(s => { pc[s] = (breakdown?.stage_counts || {})[s] || 0; });
+    pc.freshYetToContact = freshYetToContact || 0;
+    pc.Fresh = Math.max(0, (pc.Fresh || 0) - pc.freshYetToContact);
     setPipelineCounts(pc);
     const rc = {};
     RESPONSE_ORDER.forEach(r => { rc[r] = (breakdown?.response_counts || {})[r] || 0; });
