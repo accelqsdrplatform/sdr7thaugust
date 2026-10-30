@@ -8,24 +8,43 @@ export default function Reports() {
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Paginated up to an explicit cap instead of a single unbounded fetch --
+  // this report (and its CSV export) used to silently truncate past
+  // Supabase's 1000-row return cap once a scope's contact count passed it.
+  const REPORTS_CONTACTS_LIMIT = 20000;
+  async function fetchAllContacts(buildQuery) {
+    const rows = [];
+    let from = 0;
+    for (;;) {
+      const { data } = await buildQuery().range(from, from + 999);
+      if (!data || data.length === 0) break;
+      rows.push(...data);
+      if (rows.length >= REPORTS_CONTACTS_LIMIT || data.length < 1000) break;
+      from += 1000;
+    }
+    return rows.slice(0, REPORTS_CONTACTS_LIMIT);
+  }
+
   useEffect(() => {
     async function load() {
       setLoading(true);
-      let q1 = supabase.from('contacts').select('*');
-      let q2 = supabase.from('activity_log').select('*, org_hierarchy!actor_id(full_name,role)').order('created_at', { ascending: false }).limit(200);
-
-      if (profile?.role === 'owner') {
-        q1 = q1.eq('owner_id', user.id);
-        q2 = q2.eq('actor_id', user.id);
-      } else {
+      let scopeIds = null;
+      if (profile?.role !== 'owner') {
         const { data: subs } = await supabase.rpc('get_subordinate_ids', { manager_user_id: user.id });
-        const ids = [user.id, ...(subs || []).map(s => s.user_id)];
-        if (ids.length) { q1 = q1.in('owner_id', ids); q2 = q2.in('actor_id', ids); }
-        else { q1 = q1.eq('owner_id', user.id); q2 = q2.eq('actor_id', user.id); }
+        scopeIds = [user.id, ...(subs || []).map(s => s.user_id)];
       }
 
-      const [{ data: c }, { data: a }] = await Promise.all([q1, q2]);
-      setContacts(c || []);
+      let q2 = supabase.from('activity_log').select('*, org_hierarchy!actor_id(full_name,role)').order('created_at', { ascending: false }).limit(200);
+      q2 = scopeIds ? q2.in('actor_id', scopeIds) : q2.eq('actor_id', user.id);
+
+      const [c, { data: a }] = await Promise.all([
+        fetchAllContacts(() => {
+          let q1 = supabase.from('contacts').select('*');
+          return scopeIds ? q1.in('owner_id', scopeIds) : q1.eq('owner_id', user.id);
+        }),
+        q2,
+      ]);
+      setContacts(c);
       setActivity(a || []);
       setLoading(false);
     }
