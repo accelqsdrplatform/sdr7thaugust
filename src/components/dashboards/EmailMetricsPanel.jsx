@@ -174,7 +174,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
 
     const [{ count: emailsSent }, { count: responses }, { count: contactsAdded }, breakdownRes, dailyRowsRes] = await Promise.all([
       supabase.from('emails').select('id', { count: 'exact', head: true }).in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso),
-      supabase.from('email_responses').select('id', { count: 'exact', head: true }).in('owner_id', ids).gte('responded_at', startIso).lte('responded_at', endIso),
+      supabase.from('email_responses').select('id', { count: 'exact', head: true }).in('owner_id', ids).in('response_type', RESPONSE_ORDER).gte('responded_at', startIso).lte('responded_at', endIso),
       supabase.from('contacts').select('id', { count: 'exact', head: true }).in('owner_id', ids).gte('created_at', startIso).lte('created_at', endIso),
       // Pipeline/response/accounts-added counts computed inside Postgres via
       // email_metrics_breakdown() -- see add_email_metrics_breakdown_rpc.sql.
