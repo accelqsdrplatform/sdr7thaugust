@@ -103,16 +103,25 @@ export default function Templates() {
 
     const ids = allRows.map(r => r.id);
     if (ids.length > 0) {
-      const { data: assigns } = await supabase.from('template_assignments').select('template_id, status, contact_id').in('template_id', ids);
-      const contactIds = [...new Set((assigns || []).map(a => a.contact_id))];
+      // Paginated -- a popular template can accumulate well over 1000
+      // assignment rows, which used to silently truncate the total/
+      // completed/reply-rate numbers shown per template once past the cap.
+      const assigns = [];
+      { let o = 0; for (;;) { const { data: d } = await supabase.from('template_assignments').select('template_id, status, contact_id').in('template_id', ids).range(o, o + 999); if (!d?.length) break; assigns.push(...d); if (d.length < 1000) break; o += 1000; } }
+
+      const contactIds = [...new Set(assigns.map(a => a.contact_id))];
       let contactMap = {};
-      if (contactIds.length > 0) {
-        const { data: contactRows } = await supabase.from('contacts').select('id, response_state, response_type, status').in('id', contactIds);
+      // Chunked by 1000 ids per IN() clause -- each chunk can return at most
+      // one row per id, so this stays under the row cap without needing
+      // range() pagination too.
+      for (let i = 0; i < contactIds.length; i += 1000) {
+        const chunk = contactIds.slice(i, i + 1000);
+        const { data: contactRows } = await supabase.from('contacts').select('id, response_state, response_type, status').in('id', chunk);
         (contactRows || []).forEach(c => { contactMap[c.id] = c; });
       }
       const statMap = {};
       ids.forEach(id => {
-        const rows = (assigns || []).filter(a => a.template_id === id);
+        const rows = assigns.filter(a => a.template_id === id);
         const total = rows.length;
         const completed = rows.filter(a => a.status === 'completed').length;
         const replied = rows.filter(a => contactMap[a.contact_id]?.response_state === 'replied').length;
