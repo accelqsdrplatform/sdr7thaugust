@@ -10,20 +10,30 @@ export default function Analytics() {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Paginated up to an explicit cap instead of a single unbounded fetch --
+  // these stats used to silently undercount past Supabase's 1000-row return
+  // cap once a scope's contact count passed it.
+  const ANALYTICS_LIMIT = 20000;
   useEffect(() => {
     async function load() {
       setLoading(true);
-      let q = supabase.from('contacts').select('*');
-      if (profile?.role === 'owner') {
-        q = q.eq('owner_id', user.id);
-      } else {
+      let scopeIds = null;
+      if (profile?.role !== 'owner') {
         const { data: subs } = await supabase.rpc('get_subordinate_ids', { manager_user_id: user.id });
-        const ids = [user.id, ...(subs || []).map(s => s.user_id)];
-        if (ids.length) q = q.in('owner_id', ids);
-        else q = q.eq('owner_id', user.id);
+        scopeIds = [user.id, ...(subs || []).map(s => s.user_id)];
       }
-      const { data } = await q;
-      setContacts(data || []);
+      const rows = [];
+      let from = 0;
+      for (;;) {
+        let q = supabase.from('contacts').select('*');
+        q = scopeIds ? q.in('owner_id', scopeIds) : q.eq('owner_id', user.id);
+        const { data } = await q.range(from, from + 999);
+        if (!data || data.length === 0) break;
+        rows.push(...data);
+        if (rows.length >= ANALYTICS_LIMIT || data.length < 1000) break;
+        from += 1000;
+      }
+      setContacts(rows.slice(0, ANALYTICS_LIMIT));
       setLoading(false);
     }
     load();
