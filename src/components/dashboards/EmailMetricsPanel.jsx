@@ -191,6 +191,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
 
     const pc = {};
     STAGE_ORDER.forEach(s => { pc[s] = (breakdown?.stage_counts || {})[s] || 0; });
+    pc.unsubscribed = (breakdown?.stage_counts || {}).unsubscribed || 0;
     setPipelineCounts(pc);
     const rc = {};
     RESPONSE_ORDER.forEach(r => { rc[r] = (breakdown?.response_counts || {})[r] || 0; });
