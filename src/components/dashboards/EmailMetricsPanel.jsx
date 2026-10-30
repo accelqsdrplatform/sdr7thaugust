@@ -86,17 +86,24 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
     ]);
 
     const accIds = [...new Set((contactAccRows || []).map(c => c.account_id).filter(Boolean))];
-    let accountsAdded = 0;
-    if (accIds.length) {
-      const { count } = await supabase.from('accounts').select('id', { count: 'exact', head: true }).in('id', accIds).gte('created_at', startIso).lte('created_at', endIso);
-      accountsAdded = count || 0;
-    }
+
+    // These three don't depend on each other -- run them together instead of
+    // as a chain of sequential round-trips (the main cost of Team view).
+    const [accountsCountRes, bookContactsRes, dailyRowsRes] = await Promise.all([
+      accIds.length
+        ? supabase.from('accounts').select('id', { count: 'exact', head: true }).in('id', accIds).gte('created_at', startIso).lte('created_at', endIso)
+        : Promise.resolve({ count: 0 }),
+      // Snapshot distribution of the scoped book right now -- not date-ranged,
+      // since stage/response_type are current-state fields, not dated events.
+      supabase.from('contacts').select('status, response_type').in('owner_id', ids),
+      supabase.from('emails').select('sent_at, stage').in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso),
+    ]);
+    const accountsAdded = accountsCountRes.count || 0;
+    const bookContacts = bookContactsRes.data;
+    const dailyRows = dailyRowsRes.data;
 
     setStats({ emailsSent: emailsSent || 0, responses: responses || 0, contactsAdded: contactsAdded || 0, accountsAdded });
 
-    // Snapshot distribution of the scoped book right now -- not date-ranged,
-    // since stage/response_type are current-state fields, not dated events.
-    const { data: bookContacts } = await supabase.from('contacts').select('status, response_type').in('owner_id', ids);
     const pc = {};
     STAGE_ORDER.forEach(s => { pc[s] = 0; });
     (bookContacts || []).forEach(c => { if (STAGE_ORDER.includes(c.status)) pc[c.status] = (pc[c.status] || 0) + 1; });
@@ -109,7 +116,6 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
     // Day-by-day breakdown of emails sent within the selected range, split
     // by the stage the contact was in when each email went out -- new stage
     // columns appear automatically as they show up in the data.
-    const { data: dailyRows } = await supabase.from('emails').select('sent_at, stage').in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso);
     const dayStageMap = {};
     const stagesSeen = new Set();
     (dailyRows || []).forEach(r => {
