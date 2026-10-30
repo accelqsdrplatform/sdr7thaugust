@@ -13,8 +13,22 @@ export default function DirectorDashboard() {
 
   useEffect(() => {
     async function load() {
-      const [allContacts, { data: allHierarchy }, { data: acts }] = await Promise.all([
-        (async()=>{const a=[];let o=0;for(;;){const{data:d}=await supabase.from('contacts').select('*').range(o,o+999);if(!d?.length)break;a.push(...d);if(d.length<1000)break;o+=1000;}return a;})(),
+      // Org-wide counts use Postgres head-counts instead of pulling every
+      // contact row into the browser -- at 10 lakh+ contacts, downloading
+      // and filtering the whole table client-side would be slow and
+      // memory-heavy on every dashboard load.
+      async function countContacts(build) {
+        const { count } = await build(supabase.from('contacts').select('*', { count: 'exact', head: true }));
+        return count || 0;
+      }
+
+      const [total, contacted, replies, meetings, won, bounced, { data: allHierarchy }, { data: acts }] = await Promise.all([
+        countContacts(q => q.eq('bounced', false)),
+        countContacts(q => q.eq('bounced', false).neq('status', 'fresh')),
+        countContacts(q => q.in('status', ['replied', 'meeting', 'won'])),
+        countContacts(q => q.eq('status', 'meeting')),
+        countContacts(q => q.eq('status', 'won')),
+        countContacts(q => q.eq('bounced', true)),
         supabase.from('org_hierarchy').select('*'),
         supabase.from('activity_log')
           .select('*, contacts(full_name,company), org_hierarchy!actor_id(full_name,role)')
@@ -22,18 +36,12 @@ export default function DirectorDashboard() {
           .limit(20),
       ]);
 
-      const c = allContacts;
-      setStats({
-        total: c.filter(x => !x.bounced).length,
-        contacted: c.filter(x => x.status !== 'fresh' && !x.bounced).length,
-        replies: c.filter(x => ['replied','meeting','won'].includes(x.status)).length,
-        meetings: c.filter(x => x.status === 'meeting').length,
-        won: c.filter(x => x.status === 'won').length,
-        bounced: c.filter(x => x.bounced).length,
-      });
+      setStats({ total, contacted, replies, meetings, won, bounced });
       setActivity(acts || []);
 
-      // Leaderboard: owners only, ranked by replies
+      // Leaderboard: owners only, ranked by replies -- per-owner stats come
+      // from the team_stats_by_owner RPC (server-side aggregation) rather
+      // than filtering a full contacts pull, for the same scale reason.
       const sdrs = (allHierarchy || []).filter(h => h.role === 'owner');
 
       // Team view picker (Email activity panel): everyone, not just owners --
@@ -42,20 +50,25 @@ export default function DirectorDashboard() {
       const everyone = allHierarchy || [];
       setTeamIds(everyone.map(s => s.user_id));
       setTeamMembers(everyone.map(s => ({ id: s.user_id, name: s.full_name })));
+
+      const ownerIds = sdrs.map(s => s.user_id);
+      const { data: statsRows } = ownerIds.length
+        ? await supabase.rpc('team_stats_by_owner', { ids: ownerIds })
+        : { data: [] };
+      const statsByOwner = Object.fromEntries((statsRows || []).map(r => [r.owner_id, r]));
+
       const board = sdrs.map(s => {
-        const sc = c.filter(x => x.owner_id === s.user_id);
-        const active = sc.filter(x => !x.bounced).length;
-        const replied = sc.filter(x => ['replied','meeting','won'].includes(x.status)).length;
+        const st = statsByOwner[s.user_id] || { active: 0, replies: 0, meetings: 0, won: 0, bounced: 0 };
         return {
           id: s.id,
           name: s.full_name,
           region: s.region,
-          active,
-          replied,
-          meetings: sc.filter(x => x.status === 'meeting').length,
-          won: sc.filter(x => x.status === 'won').length,
-          bounced: sc.filter(x => x.bounced).length,
-          rate: active ? Math.round((replied / active) * 100) : 0,
+          active: st.active,
+          replied: st.replies,
+          meetings: st.meetings,
+          won: st.won,
+          bounced: st.bounced,
+          rate: st.active ? Math.round((st.replies / st.active) * 100) : 0,
         };
       }).sort((a, b) => b.replied - a.replied);
       setLeaderboard(board);
