@@ -8,6 +8,7 @@ import { normalizeIndustry } from '../constants/industryAliases';
 
 const STATUSES = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'won', 'lost', 'bounced', 'unsubscribed'];
 const FILTER_STATUSES = STATUSES.filter(s => s !== 'won' && s !== 'lost');
+const STATUS_LABELS = { unsubscribed: 'Negative' };
 
 const STATUS_STYLE = {
   Fresh:        { bg: '#e0f2fe', color: '#0369a1' },
@@ -24,7 +25,6 @@ const STATUS_STYLE = {
 
 const RESPONSE_STYLE = {
   cold:          { bg: '#f1f5f9', color: '#475569', label: 'Cold' },
-  negative:      { bg: '#fee2e2', color: '#991b1b', label: 'Negative' },
   not_interested:{ bg: '#fef3c7', color: '#92400e', label: 'Not Interested' },
   warm:          { bg: '#fef9c3', color: '#854d0e', label: 'Warm' },
   prospect:      { bg: '#dcfce7', color: '#15803d', label: 'Prospect' },
@@ -733,7 +733,7 @@ export default function Contacts() {
                 color: filter === s ? '#111' : '#666',
                 fontWeight: filter === s ? 600 : 400,
                 boxShadow: filter === s ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>
-              {s === 'all' ? 'All' : s}
+              {s === 'all' ? 'All' : (STATUS_LABELS[s] || s)}
             </button>
           ))}
         </div>
@@ -882,7 +882,6 @@ export default function Contacts() {
           <option value="warm">Warm</option>
           <option value="prospect">Prospect</option>
           <option value="cold">Cold</option>
-          <option value="negative">Negative</option>
           <option value="not_interested">Not Interested</option>
         </select>
         )}
@@ -1017,7 +1016,7 @@ export default function Contacts() {
                   <td style={{ padding: '10px 14px', color: '#666' }}>{c.title || '—'}</td>
                   <td style={{ padding: '10px 14px' }}>
                     <span style={{ padding: '3px 9px', borderRadius: 20, fontSize: 11, background: ss.bg, color: ss.color, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                      {c.status}
+                      {STATUS_LABELS[c.status] || c.status}
                     </span>
                   </td>
                   <td style={{ padding: '10px 14px' }}>
@@ -1040,8 +1039,7 @@ export default function Contacts() {
                         style={{ fontSize: 11, padding: '3px 6px', borderRadius: 6, border: '1px solid #e0e0e0', cursor: 'pointer', color: '#aaa', background: '#fff' }}>
                         <option value="">Set response…</option>
                         <option value="cold">Cold</option>
-                        <option value="negative">Negative</option>
-                        <option value="not_interested">Not Interested</option>
+                                      <option value="not_interested">Not Interested</option>
                         <option value="warm">Warm</option>
                         <option value="prospect">Prospect</option>
                       </select>
@@ -1057,7 +1055,7 @@ export default function Contacts() {
                     <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
                       <select value={c.status} onChange={e => updateStatus(c.id, e.target.value)}
                         style={{ fontSize: 11, padding: '3px 6px', borderRadius: 6, border: '1px solid #e0e0e0', cursor: 'pointer', background: '#fff' }}>
-                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
                       </select>
                       <div style={{ position: 'relative', flexShrink: 0 }}>
                         <button onClick={() => { setNotePopover(notePopover === c.id ? null : c.id); setNoteDraft(''); }}
