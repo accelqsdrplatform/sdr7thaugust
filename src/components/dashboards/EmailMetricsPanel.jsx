@@ -4,9 +4,10 @@ import { supabase } from '../../lib/supabase';
 
 const STAGE_ORDER = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'bounced', 'unsubscribed'];
 const STAGE_COLORS = { Fresh: '#3b82f6', F1: '#10b981', F2: '#059669', F3: '#f59e0b', F4: '#ef4444', F5: '#dc2626', bounced: '#991b1b', unsubscribed: '#92400e' };
-const RESPONSE_ORDER = ['prospect', 'warm', 'not_interested', 'negative'];
-const RESPONSE_LABELS = { prospect: 'Prospect', warm: 'Warm', not_interested: 'Not Interested', negative: 'Negative' };
-const RESPONSE_COLORS = { prospect: '#059669', warm: '#d97706', not_interested: '#6b7280', negative: '#dc2626' };
+const RESPONSE_ORDER = ['prospect', 'warm', 'not_interested'];
+const RESPONSE_LABELS = { prospect: 'Prospect', warm: 'Warm', not_interested: 'Not Interested' };
+const RESPONSE_COLORS = { prospect: '#059669', warm: '#d97706', not_interested: '#6b7280' };
+const STAGE_LABELS = { unsubscribed: 'Negative' };
 
 const RANGE_OPTIONS = [
   { key: 'today', label: 'Today' },
@@ -292,8 +293,8 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
           <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pipeline by stage</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {STAGE_ORDER.map(s => (
-              <div key={s} onClick={() => (pipelineCounts[s] || 0) > 0 && openDrillDown('status', s, s + ' -- Pipeline by stage')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, cursor: (pipelineCounts[s] || 0) > 0 ? 'pointer' : 'default' }}>
-                <span style={{ color: '#555' }}>{s}</span>
+              <div key={s} onClick={() => (pipelineCounts[s] || 0) > 0 && openDrillDown('status', s, (STAGE_LABELS[s] || s) + ' -- Pipeline by stage')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, cursor: (pipelineCounts[s] || 0) > 0 ? 'pointer' : 'default' }}>
+                <span style={{ color: '#555' }}>{STAGE_LABELS[s] || s}</span>
                 <span style={{ fontWeight: 700, color: STAGE_COLORS[s] }}>{pipelineCounts[s] || 0}</span>
               </div>
             ))}
