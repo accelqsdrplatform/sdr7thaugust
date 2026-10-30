@@ -17,21 +17,26 @@ const RANGE_OPTIONS = [
   { key: 90, label: '90d' },
 ];
 
-// Supabase caps a single select at 1000 rows -- for Team view, scoping by
-// many owner_ids on a multi-thousand-row contacts table silently truncated
-// results to the first 1000, undercounting pipeline/response breakdowns.
-// This pages through everything instead.
-async function fetchAllContactRows(select, ids) {
+// Pipeline/response/accounts counts come from the email_metrics_breakdown
+// Postgres function (counts computed in the DB, nothing shipped row-by-row)
+// so this stays fast no matter how large the contacts table gets -- see
+// add_email_metrics_breakdown_rpc.sql.
+//
+// The drill-down list still needs actual rows, but only for the one bucket
+// the person clicked (not the whole book), and capped so a bucket with
+// lakhs of contacts doesn't try to load them all into a dialog.
+const DRILLDOWN_CAP = 500;
+async function fetchDrillDownRows(ids, field, value) {
   const rows = [];
   let from = 0;
   for (;;) {
-    const { data } = await supabase.from('contacts').select(select).in('owner_id', ids).range(from, from + 999);
+    const { data } = await supabase.from('contacts').select('id, first_name, last_name, company, title, owner_id').in('owner_id', ids).eq(field, value).range(from, from + 999);
     if (!data || data.length === 0) break;
     rows.push(...data);
-    if (data.length < 1000) break;
+    if (rows.length >= DRILLDOWN_CAP || data.length < 1000) break;
     from += 1000;
   }
-  return rows;
+  return rows.slice(0, DRILLDOWN_CAP);
 }
 
 function computeRange(range, customFrom, customTo) {
@@ -85,8 +90,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
   const [dailyEmails, setDailyEmails] = useState([]);
   const [dailyStageCols, setDailyStageCols] = useState([]);
   const navigate = useNavigate();
-  const [bookContactsList, setBookContactsList] = useState([]);
-  const [drillDown, setDrillDown] = useState(null); // { title, contacts }
+  const [drillDown, setDrillDown] = useState(null); // { title, contacts, total, loading }
 
   const scopeIds = (showToggle && viewMode === 'team')
     ? (selectedMemberId ? [selectedMemberId] : (teamIds && teamIds.length ? teamIds : ownIds))
@@ -94,46 +98,43 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
 
   useEffect(() => { load(); }, [range, customFrom, customTo, viewMode, selectedMemberId, JSON.stringify(ownIds), JSON.stringify(teamIds)]);
 
+  async function openDrillDown(field, value, title) {
+    setDrillDown({ title, contacts: [], total: null, loading: true });
+    const ids = scopeIds && scopeIds.length ? scopeIds : ['00000000-0000-0000-0000-000000000000'];
+    const [{ count: total }, rows] = await Promise.all([
+      supabase.from('contacts').select('id', { count: 'exact', head: true }).in('owner_id', ids).eq(field, value),
+      fetchDrillDownRows(ids, field, value),
+    ]);
+    setDrillDown({ title, contacts: rows, total: total || 0, loading: false });
+  }
+
   async function load() {
     setLoading(true);
     const { start, end } = computeRange(range, customFrom, customTo);
     const startIso = start.toISOString(), endIso = end.toISOString();
     const ids = scopeIds && scopeIds.length ? scopeIds : ['00000000-0000-0000-0000-000000000000'];
 
-    const [{ count: emailsSent }, { count: responses }, { count: contactsAdded }, contactAccRows] = await Promise.all([
+    const [{ count: emailsSent }, { count: responses }, { count: contactsAdded }, breakdownRes, dailyRowsRes] = await Promise.all([
       supabase.from('emails').select('id', { count: 'exact', head: true }).in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso),
       supabase.from('email_responses').select('id', { count: 'exact', head: true }).in('owner_id', ids).gte('responded_at', startIso).lte('responded_at', endIso),
       supabase.from('contacts').select('id', { count: 'exact', head: true }).in('owner_id', ids).gte('created_at', startIso).lte('created_at', endIso),
-      fetchAllContactRows('account_id', ids),
-    ]);
-
-    const accIds = [...new Set((contactAccRows || []).map(c => c.account_id).filter(Boolean))];
-
-    // These three don't depend on each other -- run them together instead of
-    // as a chain of sequential round-trips (the main cost of Team view).
-    const [accountsCountRes, bookContactsRes, dailyRowsRes] = await Promise.all([
-      accIds.length
-        ? supabase.from('accounts').select('id', { count: 'exact', head: true }).in('id', accIds).gte('created_at', startIso).lte('created_at', endIso)
-        : Promise.resolve({ count: 0 }),
-      // Snapshot distribution of the scoped book right now -- not date-ranged,
-      // since stage/response_type are current-state fields, not dated events.
-      fetchAllContactRows('id, first_name, last_name, company, title, status, response_type, owner_id', ids).then(data => ({ data })),
+      // Pipeline/response/accounts-added counts computed inside Postgres via
+      // email_metrics_breakdown() -- see add_email_metrics_breakdown_rpc.sql.
+      // Stays a single fast round trip no matter how large contacts gets.
+      supabase.rpc('email_metrics_breakdown', { ids, start_ts: startIso, end_ts: endIso }).single(),
       supabase.from('emails').select('sent_at, stage').in('owner_id', ids).gte('sent_at', startIso).lte('sent_at', endIso),
     ]);
-    const accountsAdded = accountsCountRes.count || 0;
-    const bookContacts = bookContactsRes.data;
-    setBookContactsList(bookContacts || []);
+    const breakdown = breakdownRes.data;
+    const accountsAdded = breakdown?.accounts_added || 0;
     const dailyRows = dailyRowsRes.data;
 
     setStats({ emailsSent: emailsSent || 0, responses: responses || 0, contactsAdded: contactsAdded || 0, accountsAdded });
 
     const pc = {};
-    STAGE_ORDER.forEach(s => { pc[s] = 0; });
-    (bookContacts || []).forEach(c => { if (STAGE_ORDER.includes(c.status)) pc[c.status] = (pc[c.status] || 0) + 1; });
+    STAGE_ORDER.forEach(s => { pc[s] = (breakdown?.stage_counts || {})[s] || 0; });
     setPipelineCounts(pc);
     const rc = {};
-    RESPONSE_ORDER.forEach(r => { rc[r] = 0; });
-    (bookContacts || []).forEach(c => { if (c.response_type && RESPONSE_ORDER.includes(c.response_type)) rc[c.response_type] = (rc[c.response_type] || 0) + 1; });
+    RESPONSE_ORDER.forEach(r => { rc[r] = (breakdown?.response_counts || {})[r] || 0; });
     setResponseCounts(rc);
 
     // Day-by-day breakdown of emails sent within the selected range, split
@@ -233,7 +234,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
           <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pipeline by stage</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {STAGE_ORDER.map(s => (
-              <div key={s} onClick={() => (pipelineCounts[s] || 0) > 0 && setDrillDown({ title: s + ' -- Pipeline by stage', contacts: bookContactsList.filter(c => c.status === s) })} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, cursor: (pipelineCounts[s] || 0) > 0 ? 'pointer' : 'default' }}>
+              <div key={s} onClick={() => (pipelineCounts[s] || 0) > 0 && openDrillDown('status', s, s + ' -- Pipeline by stage')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, cursor: (pipelineCounts[s] || 0) > 0 ? 'pointer' : 'default' }}>
                 <span style={{ color: '#555' }}>{s}</span>
                 <span style={{ fontWeight: 700, color: STAGE_COLORS[s] }}>{pipelineCounts[s] || 0}</span>
               </div>
@@ -244,7 +245,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
           <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Responses by type</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {RESPONSE_ORDER.map(r => (
-              <div key={r} onClick={() => (responseCounts[r] || 0) > 0 && setDrillDown({ title: RESPONSE_LABELS[r] + ' -- Responses by type', contacts: bookContactsList.filter(c => c.response_type === r) })} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, cursor: (responseCounts[r] || 0) > 0 ? 'pointer' : 'default' }}>
+              <div key={r} onClick={() => (responseCounts[r] || 0) > 0 && openDrillDown('response_type', r, RESPONSE_LABELS[r] + ' -- Responses by type')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, cursor: (responseCounts[r] || 0) > 0 ? 'pointer' : 'default' }}>
                 <span style={{ color: '#555' }}>{RESPONSE_LABELS[r]}</span>
                 <span style={{ fontWeight: 700, color: RESPONSE_COLORS[r] }}>{responseCounts[r] || 0}</span>
               </div>
@@ -288,10 +289,15 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
               <div style={{ fontWeight: 700, fontSize: 14 }}>{drillDown.title}</div>
               <span onClick={() => setDrillDown(null)} style={{ cursor: 'pointer', color: '#888', fontSize: 18, lineHeight: 1 }}>&times;</span>
             </div>
-            {drillDown.contacts.length === 0 ? (
+            {drillDown.loading ? (
+              <div style={{ color: '#888', fontSize: 13 }}>Loading...</div>
+            ) : drillDown.contacts.length === 0 ? (
               <div style={{ color: '#888', fontSize: 13 }}>No contacts found.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {drillDown.total != null && drillDown.total > drillDown.contacts.length && (
+                  <div style={{ color: '#888', fontSize: 11.5 }}>Showing first {drillDown.contacts.length} of {drillDown.total}</div>
+                )}
                 {drillDown.contacts.map(c => (
                   <div key={c.id} onClick={() => { setDrillDown(null); navigate('/contacts/' + c.id); }} style={{ display: 'block', padding: '8px 10px', borderRadius: 7, border: '1px solid #f0f0ee', cursor: 'pointer' }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#222' }}>{[c.first_name, c.last_name].filter(Boolean).join(' ') || '(no name)'}</div>
