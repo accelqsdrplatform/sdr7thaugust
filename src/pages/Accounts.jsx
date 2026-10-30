@@ -685,10 +685,10 @@ export default function Accounts() {
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</div>
                     <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
                       {(() => {
-                        const freshCt = ctcs.filter(c => c.status === 'Fresh').length;
-                        const contactedCt = ctcs.length - freshCt;
-                        const freshPct = ctcs.length ? Math.round((freshCt / ctcs.length) * 100) : 0;
-                        return `${ctcs.length} contact${ctcs.length !== 1 ? 's' : ''} · ${contactedCt} contacted · ${freshCt} to start (${freshPct}%)`;
+                        const notYetSentCt = ctcs.filter(c => c.status === 'Fresh' && !c.next_followup).length;
+                        const queuedCt = ctcs.filter(c => c.status === 'Fresh' && c.next_followup).length;
+                        const contactedCt = ctcs.length - notYetSentCt - queuedCt;
+                        return `${ctcs.length} contact${ctcs.length !== 1 ? 's' : ''} · ${contactedCt} contacted · ${queuedCt} queued · ${notYetSentCt} not yet sent`;
                       })()}
                     </div>
                   </div>
