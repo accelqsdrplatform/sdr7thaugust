@@ -159,6 +159,13 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
       setDrillDown({ mode: 'response', title, groups, expandedOwnerId: null, loading: false });
       return;
     }
+    if (field === 'status' && value === 'unsubscribed') {
+      setDrillDown({ mode: 'response', title, groups: [], expandedOwnerId: null, loading: true });
+      const rows = await fetchDrillDownRows(ids, field, value);
+      const groups = groupDrillDownRowsByOwner(rows, ownerNameById);
+      setDrillDown({ mode: 'response', title, groups, expandedOwnerId: null, loading: false });
+      return;
+    }
     setDrillDown({ mode: 'status', title, contacts: [], total: null, loading: true });
     const [{ count: total }, rows] = await Promise.all([
       supabase.from('contacts').select('id', { count: 'exact', head: true }).in('owner_id', ids).eq(field, value),
