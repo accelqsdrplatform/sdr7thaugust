@@ -43,12 +43,29 @@ export default function Responses() {
 
   useEffect(() => { load(); }, [viewAll]);
 
+  // Paginated up to an explicit cap instead of a single unbounded fetch --
+  // avoids Supabase's silent 1000-row return cap as response volume grows,
+  // while still bounding how much ever lands in one browser tab.
+  const RESPONSES_LIMIT = 5000;
+  async function fetchResponseRows(scopedToMe) {
+    const rows = [];
+    let from = 0;
+    for (;;) {
+      let q = supabase.from('contacts').select('*').not('response_type', 'is', null).order('last_touchpoint_date', { ascending: false, nullsFirst: false });
+      if (scopedToMe) q = q.eq('owner_id', user.id);
+      const { data } = await q.range(from, from + 999);
+      if (!data || data.length === 0) break;
+      rows.push(...data);
+      if (rows.length >= RESPONSES_LIMIT || data.length < 1000) break;
+      from += 1000;
+    }
+    return rows.slice(0, RESPONSES_LIMIT);
+  }
+
   async function load() {
     setLoading(true);
-    let q = supabase.from('contacts').select('*').not('response_type', 'is', null).order('last_touchpoint_date', { ascending: false, nullsFirst: false });
-    if (!viewAll || !canViewAll) q = q.eq('owner_id', user.id);
-    const { data } = await q;
-    setContacts(data || []);
+    const rows = await fetchResponseRows(!viewAll || !canViewAll);
+    setContacts(rows);
     setLoading(false);
   }
 
