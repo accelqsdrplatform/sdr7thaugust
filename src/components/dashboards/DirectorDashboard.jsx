@@ -35,8 +35,13 @@ export default function DirectorDashboard() {
 
       // Leaderboard: owners only, ranked by replies
       const sdrs = (allHierarchy || []).filter(h => h.role === 'owner');
-      setTeamIds(sdrs.map(s => s.user_id));
-      setTeamMembers(sdrs.map(s => ({ id: s.user_id, name: s.full_name })));
+
+      // Team view picker (Email activity panel): everyone, not just owners --
+      // sub-admins also own and work contacts, and were previously missing
+      // from this dropdown entirely since it reused the owners-only list.
+      const everyone = allHierarchy || [];
+      setTeamIds(everyone.map(s => s.user_id));
+      setTeamMembers(everyone.map(s => ({ id: s.user_id, name: s.full_name })));
       const board = sdrs.map(s => {
         const sc = c.filter(x => x.owner_id === s.user_id);
         const active = sc.filter(x => !x.bounced).length;
