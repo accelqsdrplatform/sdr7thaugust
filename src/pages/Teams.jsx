@@ -14,7 +14,7 @@ function formatRole(role) {
 export default function Teams() {
   const { user, profile } = useAuth();
   const [hierarchy, setHierarchy] = useState([]);
-  const [contacts, setContacts] = useState([]);
+  const [statsByOwner, setStatsByOwner] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,25 +24,23 @@ export default function Teams() {
       const subIds = (subs || []).map(s => s.user_id);
       const lookupIds = [user.id, ...subIds];
 
-      const [{ data: hier }, { data: c }] = await Promise.all([
+      // Per-owner counts computed in Postgres via team_stats_by_owner() instead
+      // of pulling every contact row into the browser -- stays fast and correct
+      // no matter how large a manager's downline book gets (the old unbounded
+      // fetch silently truncated past Supabase's 1000-row cap).
+      const [{ data: hier }, { data: statsRows }] = await Promise.all([
         supabase.from('org_hierarchy').select('*').in('user_id', lookupIds),
-        supabase.from('contacts').select('owner_id, status, bounced').in('owner_id', lookupIds),
+        supabase.rpc('team_stats_by_owner', { ids: lookupIds }),
       ]);
       setHierarchy(hier || []);
-      setContacts(c || []);
+      setStatsByOwner(Object.fromEntries((statsRows || []).map(r => [r.owner_id, r])));
       setLoading(false);
     }
     load();
   }, [user.id]);
 
   function getStats(userId) {
-    const c = contacts.filter(x => x.owner_id === userId);
-    return {
-      active: c.filter(x => !x.bounced).length,
-      replies: c.filter(x => ['replied','meeting','won'].includes(x.status)).length,
-      won: c.filter(x => x.status === 'won').length,
-      bounced: c.filter(x => x.bounced).length,
-    };
+    return statsByOwner[userId] || { active: 0, replies: 0, won: 0, bounced: 0 };
   }
 
   // Build tree: me → direct reports → their reports
