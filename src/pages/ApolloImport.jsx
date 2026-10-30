@@ -201,12 +201,22 @@ export default function ApolloImport() {
   }
 
   async function fetchAccountMaps(assignTo) {
-    const { data: ownedAccounts } = await supabase.from('accounts').select('id, name, website').eq('owner_id', assignTo);
+    // Paginated fetch -- a single rep's account book can exceed Supabase's
+    // default 1000-row return cap as the org scales, which would otherwise
+    // silently miss matches and create duplicate accounts for companies that
+    // already exist past the first 1000.
     const byDomain = {}, byName = {};
-    (ownedAccounts || []).forEach(a => {
-      if (a.website) { const d = normalizeDomain(a.website); if (d) byDomain[d] = a.id; }
-      if (a.name) byName[a.name.toLowerCase()] = a.id;
-    });
+    let from = 0;
+    for (;;) {
+      const { data: page } = await supabase.from('accounts').select('id, name, website').eq('owner_id', assignTo).range(from, from + 999);
+      if (!page || page.length === 0) break;
+      page.forEach(a => {
+        if (a.website) { const d = normalizeDomain(a.website); if (d) byDomain[d] = a.id; }
+        if (a.name) byName[a.name.toLowerCase()] = a.id;
+      });
+      if (page.length < 1000) break;
+      from += 1000;
+    }
     return { byDomain, byName };
   }
 
