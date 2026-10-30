@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
-const STAGE_ORDER = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'bounced', 'unsubscribed'];
+const STAGE_ORDER = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'bounced'];
 const STAGE_COLORS = { Fresh: '#3b82f6', F1: '#10b981', F2: '#059669', F3: '#f59e0b', F4: '#ef4444', F5: '#dc2626', bounced: '#991b1b', unsubscribed: '#92400e' };
 const RESPONSE_ORDER = ['prospect', 'warm', 'not_interested'];
 const RESPONSE_LABELS = { prospect: 'Prospect', warm: 'Warm', not_interested: 'Not Interested' };
@@ -309,6 +309,10 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
                 <span style={{ fontWeight: 700, color: RESPONSE_COLORS[r] }}>{responseCounts[r] || 0}</span>
               </div>
             ))}
+            <div onClick={() => (pipelineCounts.unsubscribed || 0) > 0 && openDrillDown('status', 'unsubscribed', 'Negative -- Responses by type')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, cursor: (pipelineCounts.unsubscribed || 0) > 0 ? 'pointer' : 'default' }}>
+              <span style={{ color: '#555' }}>Negative</span>
+              <span style={{ fontWeight: 700, color: '#dc2626' }}>{pipelineCounts.unsubscribed || 0}</span>
+            </div>
           </div>
         </div>
       </div>
