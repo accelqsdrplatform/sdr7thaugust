@@ -309,12 +309,7 @@ export default function Accounts() {
     else if (acctFreshCountFilter === '1-5') q = q.gte('fresh_contact_count', 1).lte('fresh_contact_count', 5);
     else if (acctFreshCountFilter === '6-15') q = q.gte('fresh_contact_count', 6).lte('fresh_contact_count', 15);
     else if (acctFreshCountFilter === '16+') q = q.gte('fresh_contact_count', 16);
-      if (acctFreshPctFilter === '0') q = q.eq('fresh_contact_pct', 0);
-      else if (acctFreshPctFilter === '1-25') q = q.gte('fresh_contact_pct', 1).lte('fresh_contact_pct', 25);
-      else if (acctFreshPctFilter === '26-50') q = q.gte('fresh_contact_pct', 26).lte('fresh_contact_pct', 50);
-      else if (acctFreshPctFilter === '51-75') q = q.gte('fresh_contact_pct', 51).lte('fresh_contact_pct', 75);
-      else if (acctFreshPctFilter === '76-100') q = q.gte('fresh_contact_pct', 76);
-
+      
     if (search) {
       const s = `%${search}%`;
       q = q.or(`name.ilike.${s},industry.ilike.${s},country.ilike.${s}`);
@@ -328,10 +323,51 @@ export default function Accounts() {
     else if (sortBy === 'freshpct') q = q.order('fresh_contact_pct', { ascending: false });
     else q = q.order('name', { ascending: true });
 
-    q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
-
-    const { data, count } = await q;
-    const accs = data || [];
+    let accs, count;
+    if (acctFreshPctFilter) {
+      // accounts_with_stats.fresh_contact_pct counts any status='Fresh' contact
+      // as "not started", including ones already sent to the follow-up queue
+      // (next_followup set) -- the same stale definition fixed elsewhere on the
+      // dashboard and account cards. Rather than filter on that column, pull a
+      // capped candidate set (already filtered/sorted by everything else above)
+      // and compute the real not-yet-sent % per account from next_followup,
+      // then filter and paginate client-side.
+      const FRESH_PCT_CANDIDATE_CAP = 3000;
+      const { data: candidates } = await q.limit(FRESH_PCT_CANDIDATE_CAP);
+      const candAccs = candidates || [];
+      const candIds = candAccs.map(a => a.id);
+      const candContactsByAcct = {};
+      if (candIds.length > 0) {
+        let cQuery = supabase.from('contacts').select('id, status, next_followup, account_id').in('account_id', candIds);
+        if (!viewAll || !canViewAll) cQuery = cQuery.eq('owner_id', user.id);
+        const { data: candContacts } = await cQuery;
+        (candContacts || []).forEach(c => {
+          if (c.account_id) { if (!candContactsByAcct[c.account_id]) candContactsByAcct[c.account_id] = []; candContactsByAcct[c.account_id].push(c); }
+        });
+      }
+      const bucketMatches = pct => {
+        if (acctFreshPctFilter === '0') return pct === 0;
+        if (acctFreshPctFilter === '1-25') return pct >= 1 && pct <= 25;
+        if (acctFreshPctFilter === '26-50') return pct >= 26 && pct <= 50;
+        if (acctFreshPctFilter === '51-75') return pct >= 51 && pct <= 75;
+        if (acctFreshPctFilter === '76-100') return pct >= 76;
+        return true;
+      };
+      const filteredAccs = candAccs.filter(a => {
+        const ctcs = candContactsByAcct[a.id] || [];
+        if (ctcs.length === 0) return false;
+        const notYetSent = ctcs.filter(c => c.status === 'Fresh' && !c.next_followup).length;
+        const pct = Math.round((notYetSent / ctcs.length) * 100);
+        return bucketMatches(pct);
+      });
+      count = filteredAccs.length;
+      accs = filteredAccs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    } else {
+      q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+      const { data, count: c } = await q;
+      accs = data || [];
+      count = c || 0;
+    }
     setAccounts(accs);
     setTotalCount(count || 0);
 
@@ -420,12 +456,7 @@ export default function Accounts() {
       else if (acctFreshCountFilter === '1-5') q = q.gte('fresh_contact_count', 1).lte('fresh_contact_count', 5);
       else if (acctFreshCountFilter === '6-15') q = q.gte('fresh_contact_count', 6).lte('fresh_contact_count', 15);
       else if (acctFreshCountFilter === '16+') q = q.gte('fresh_contact_count', 16);
-      if (acctFreshPctFilter === '0') q = q.eq('fresh_contact_pct', 0);
-      else if (acctFreshPctFilter === '1-25') q = q.gte('fresh_contact_pct', 1).lte('fresh_contact_pct', 25);
-      else if (acctFreshPctFilter === '26-50') q = q.gte('fresh_contact_pct', 26).lte('fresh_contact_pct', 50);
-      else if (acctFreshPctFilter === '51-75') q = q.gte('fresh_contact_pct', 51).lte('fresh_contact_pct', 75);
-      else if (acctFreshPctFilter === '76-100') q = q.gte('fresh_contact_pct', 76);
-      if (search) {
+            if (search) {
         const s = '%' + search + '%';
         q = q.or('name.ilike.' + s + ',industry.ilike.' + s + ',country.ilike.' + s);
       }
