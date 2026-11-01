@@ -425,6 +425,21 @@ export default function Accounts() {
     setContactsByAccount(byAcct);
   }, [accounts, viewAll, canViewAll, user.id]);
 
+  // When a contact is started (first-time outreach) on an account that's
+  // currently shown under the "No Follow-up Added On" filter for *today*,
+  // drop it from the visible list immediately rather than waiting for the
+  // rep to re-find it after a refetch -- the whole point of the filter is
+  // to stop working the same account twice.
+  const handleContactStarted = useCallback((accountId) => {
+    if (acctNoStartDate) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      if (acctNoStartDate === todayStr) {
+        setAccounts(prev => prev.filter(a => a.id !== accountId));
+        setTotalCount(prev => Math.max(0, (prev || 0) - 1));
+      }
+    }
+  }, [acctNoStartDate]);
+
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctFreshPctFilter, acctHqFilter, acctStateFilter, acctListFilter, acctNoStartDate]);
 
@@ -834,7 +849,7 @@ export default function Accounts() {
             </div>
           </div>
         ) : (
-          <AccountDetail key={selected.id} account={selected} contacts={contactsByAccount[selected.id] || []} onUpdate={refreshPageContacts} navigate={navigate} />
+          <AccountDetail key={selected.id} account={selected} contacts={contactsByAccount[selected.id] || []} onUpdate={refreshPageContacts} onContactStarted={handleContactStarted} navigate={navigate} />
         )}
       </div>
 
@@ -1094,7 +1109,7 @@ export default function Accounts() {
 /* ─────────────────────────────────────────────────────────── */
 /*  ACCOUNT DETAIL                                            */
 /* ─────────────────────────────────────────────────────────── */
-function AccountDetail({ account, contacts, onUpdate, navigate }) {
+function AccountDetail({ account, contacts, onUpdate, onContactStarted, navigate }) {
   const { user, profile } = useAuth();
   const canViewAll = profile?.role === 'admin';
   const [data, setData] = useState(account);
@@ -1501,6 +1516,7 @@ setSaving(false);
     setQualifying(null);
     setPendingStartContact(null);
     onUpdate();
+    if (onContactStarted) onContactStarted(account.id);
     loadMailboxes();
   }
 
