@@ -216,6 +216,7 @@ export default function Accounts() {
   const [acctNeverTouched, setAcctNeverTouched] = useState(false);
   const [acctFreshCountFilter, setAcctFreshCountFilter] = useState('');
   const [acctFreshPctFilter, setAcctFreshPctFilter] = useState('');
+  const [acctNoStartDate, setAcctNoStartDate] = useState('');
   const [acctIndustryOptions, setAcctIndustryOptions] = useState([]);
   const [acctHqFilter, setAcctHqFilter] = useState('');
   const [acctStateFilter, setAcctStateFilter] = useState('');
@@ -225,7 +226,7 @@ export default function Accounts() {
   const [acctListOptions, setAcctListOptions] = useState([]);
   const activeAcctFilterCount = (filterBy !== 'all' ? 1 : 0) + (acctIndustryFilter ? 1 : 0) + (acctHeadcountFilter ? 1 : 0)
     + (acctNeverTouched || acctLastTouchedFrom || acctLastTouchedTo ? 1 : 0) + (acctFreshCountFilter ? 1 : 0) + (acctFreshPctFilter ? 1 : 0)
-    + (acctHqFilter ? 1 : 0) + (acctStateFilter ? 1 : 0) + (acctListFilter ? 1 : 0);
+    + (acctHqFilter ? 1 : 0) + (acctStateFilter ? 1 : 0) + (acctListFilter ? 1 : 0) + (acctNoStartDate ? 1 : 0);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
   const [totalCount, setTotalCount] = useState(0);
@@ -267,11 +268,27 @@ export default function Accounts() {
       }
     }
 
+    // "No Follow-up Added" filter: resolve which accounts already had a
+    // contact started/queued (activity_log 'outreach_started') on the chosen
+    // day, so we can exclude them below. Scoped to this rep's own starts
+    // unless viewing the whole team.
+    let startedAccountIds = null;
+    if (acctNoStartDate) {
+      const dayStart = new Date(acctNoStartDate + 'T00:00:00').toISOString();
+      const dayEnd = new Date(acctNoStartDate + 'T23:59:59.999').toISOString();
+      let actQuery = supabase.from('activity_log').select('contact_id, contacts(account_id)')
+        .eq('activity_type', 'outreach_started').gte('created_at', dayStart).lte('created_at', dayEnd);
+      if (!viewAll || !canViewAll) actQuery = actQuery.eq('actor_id', user.id);
+      const { data: startedRows } = await actQuery;
+      startedAccountIds = [...new Set((startedRows || []).map(r => r.contacts && r.contacts.account_id).filter(Boolean))];
+    }
+
     // Filtering, search, sorting, and paging all happen server-side against the
     // accounts_with_stats view, which precomputes score/contact_count/signal flags
     // so we never pull the whole accounts or contacts table into the browser.
     let q = supabase.from('accounts_with_stats').select('*', { count: 'exact' });
     if (accountIdsScope) q = q.in('id', accountIdsScope);
+    if (startedAccountIds && startedAccountIds.length > 0) q = q.not('id', 'in', '(' + startedAccountIds.join(',') + ')');
 
     // List filter: narrow to accounts that have at least one contact in the
     // selected list (lists are contact-level, so this derives the account set
@@ -387,7 +404,7 @@ export default function Accounts() {
       setContactsByAccount({});
     }
     setLoading(false);
-  }, [user.id, canViewAll, viewAll, filterBy, search, sortBy, page, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctFreshPctFilter, acctHqFilter, acctStateFilter, acctListFilter]);
+  }, [user.id, canViewAll, viewAll, filterBy, search, sortBy, page, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctFreshPctFilter, acctHqFilter, acctStateFilter, acctListFilter, acctNoStartDate]);
 
     // Lightweight refresh used by the account detail panel: re-fetches contact
   // rows for the accounts already on screen (updates counts/badges/score), but
@@ -409,7 +426,7 @@ export default function Accounts() {
   }, [accounts, viewAll, canViewAll, user.id]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-  useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctFreshPctFilter, acctHqFilter, acctStateFilter, acctListFilter]);
+  useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctFreshPctFilter, acctHqFilter, acctStateFilter, acctListFilter, acctNoStartDate]);
 
   // Accounts-by-size rollup for the right-panel summary. Mirrors fetchAll's
   // scoping/filters so it reflects the same book, but deliberately omits the
@@ -977,6 +994,14 @@ export default function Accounts() {
                     <option value="76-100">76 – 100%</option>
                   </select>
                 )}
+                {matchesAcctFilterSearch('No Follow-up Added') && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, color: acctNoStartDate ? '#1d4ed8' : '#555', marginBottom: 6 }}>No Follow-up Added On</div>
+                    <input type="date" value={acctNoStartDate} onChange={e => setAcctNoStartDate(e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: 8, border: '1px solid ' + (acctNoStartDate ? '#2563eb' : '#e0e0e0'), fontSize: 12, boxSizing: 'border-box' }} />
+                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Accounts where no contact was started/queued for follow-up on this date.</div>
+                  </div>
+                )}
                 {matchesAcctFilterSearch('Last Touched') && (
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 12, color: acctNeverTouched || acctLastTouchedFrom || acctLastTouchedTo ? '#1d4ed8' : '#555', marginBottom: 6 }}>Last Touched</div>
@@ -1000,7 +1025,7 @@ export default function Accounts() {
                   setFilterBy('all'); setSortBy('score');
                   setAcctIndustryFilter(''); setAcctHeadcountFilter('');
                   setAcctLastTouchedFrom(''); setAcctLastTouchedTo(''); setAcctNeverTouched(false);
-                  setAcctFreshCountFilter(''); setAcctHqFilter(''); setAcctStateFilter(''); setAcctListFilter('');
+                  setAcctFreshCountFilter(''); setAcctHqFilter(''); setAcctStateFilter(''); setAcctListFilter(''); setAcctNoStartDate('');
                 }}
                   style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
                   Clear filters ({activeAcctFilterCount})
