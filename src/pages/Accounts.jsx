@@ -441,6 +441,12 @@ export default function Accounts() {
     }
   }, [acctNoStartDate]);
 
+  const handleAccountDeleted = useCallback((accountId) => {
+    setAccounts(prev => prev.filter(a => a.id !== accountId));
+    setTotalCount(prev => Math.max(0, (prev || 0) - 1));
+    setSelectedId(null);
+  }, []);
+
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { setPage(1); }, [filterBy, search, sortBy, acctIndustryFilter, acctHeadcountFilter, acctLastTouchedFrom, acctLastTouchedTo, acctNeverTouched, acctFreshCountFilter, acctFreshPctFilter, acctHqFilter, acctStateFilter, acctListFilter, acctNoStartDate]);
 
@@ -850,7 +856,7 @@ export default function Accounts() {
             </div>
           </div>
         ) : (
-          <AccountDetail key={selected.id} account={selected} contacts={contactsByAccount[selected.id] || []} onUpdate={refreshPageContacts} onContactStarted={handleContactStarted} navigate={navigate} />
+          <AccountDetail key={selected.id} account={selected} contacts={contactsByAccount[selected.id] || []} onUpdate={refreshPageContacts} onContactStarted={handleContactStarted} navigate={navigate} onDeleted={handleAccountDeleted} />
         )}
       </div>
 
@@ -1110,7 +1116,7 @@ export default function Accounts() {
 /* ─────────────────────────────────────────────────────────── */
 /*  ACCOUNT DETAIL                                            */
 /* ─────────────────────────────────────────────────────────── */
-function AccountDetail({ account, contacts, onUpdate, onContactStarted, navigate }) {
+function AccountDetail({ account, contacts, onUpdate, onContactStarted, navigate, onDeleted }) {
   const { user, profile } = useAuth();
   const canViewAll = profile?.role === 'admin';
   const [data, setData] = useState(account);
@@ -1130,6 +1136,8 @@ function AccountDetail({ account, contacts, onUpdate, onContactStarted, navigate
   const [researchGenerating, setResearchGenerating] = useState({});
   const [companyDetailsCollapsed, setCompanyDetailsCollapsed] = useState(() => localStorage.getItem('company_details_collapsed') === 'true');
   const [recordDetailsCollapsed, setRecordDetailsCollapsed] = useState(() => localStorage.getItem('record_details_collapsed') === 'true');
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   function toggleCompanyDetailsCollapsed() {
     setCompanyDetailsCollapsed(prev => {
       const next = !prev;
@@ -1359,6 +1367,23 @@ setSaving(false);
     updates.headquarters = companyDetailsDraft.headquarters || null;
     await patch(updates);
     setEditingCompanyDetails(false);
+  }
+
+  async function deleteAccount() {
+    if (contacts.length > 0) {
+      toast.error('Remove or reassign all contacts linked to this account before deleting it.');
+      setShowDeleteAccountConfirm(false);
+      return;
+    }
+    setDeletingAccount(true);
+    const { error } = await supabase.from('accounts').delete().eq('id', data.id);
+    if (error) {
+      toast.error('Could not delete account: ' + error.message);
+      setDeletingAccount(false);
+      return;
+    }
+    toast.success('Account deleted');
+    if (onDeleted) onDeleted(data.id);
   }
 
   async function updateContactPitchType(cId, pt) {
@@ -1953,6 +1978,10 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
               border: 'none', cursor: aiResearching ? 'wait' : (fullLocked ? 'not-allowed' : 'pointer'), whiteSpace: 'nowrap',
             }}>
               {aiResearching ? '⏳ Researching…' : fullLocked ? `🔒 Locked` : '🤖 AI Research'}
+            </button>
+            <button onClick={() => setShowDeleteAccountConfirm(true)}
+              style={{ padding: '6px 13px', background: '#fff', color: '#dc2626', borderRadius: 8, fontSize: 12, border: '1px solid #fecaca', cursor: 'pointer' }}>
+              🗑️ Delete
             </button>
             {saving && <span style={{ fontSize: 11, color: '#9ca3af' }}>Saving…</span>}
           </div>
@@ -2668,6 +2697,34 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
       </div>
     </div>
 
+
+      {showDeleteAccountConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 24, maxWidth: 380, boxShadow: '0 10px 30px rgba(0,0,0,0.15)' }}>
+            {contacts.length > 0 ? (
+              <div style={{ fontSize: 14, marginBottom: 16 }}>
+                This account has <strong>{contacts.length}</strong> contact{contacts.length > 1 ? 's' : ''} linked. Remove or reassign them before deleting this account.
+              </div>
+            ) : (
+              <div style={{ fontSize: 14, marginBottom: 16 }}>
+                Delete <strong>{data.name}</strong>? This cannot be undone.
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowDeleteAccountConfirm(false)}
+                style={{ fontSize: 13, padding: '6px 14px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#333', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              {contacts.length === 0 && (
+                <button onClick={deleteAccount} disabled={deletingAccount}
+                  style={{ fontSize: 13, padding: '6px 14px', borderRadius: 6, border: 'none', background: '#dc2626', color: '#fff', cursor: 'pointer' }}>
+                  {deletingAccount ? 'Deleting…' : 'Delete'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* ADD CONTACT MODAL */}
       {showAddContact && (
