@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { toast } from 'sonner';
 
 const DEFAULT_CADENCE = { Fresh: 3, F1: 3, F2: 4, F3: 7, F4: 7 };
 const STATUS_CADENCE_KEY = { F1: 'Fresh', F2: 'F1', F3: 'F2', F4: 'F3', F5: 'F4' };
@@ -346,11 +347,15 @@ export default function FollowUps() {
   async function markSentCore(contact){
     const next=contact.status==='F5'?'cooling_off':NEXT_STAGE[contact.status]; if(!next) return;
     const draft=drafts[contact.id];
+    if(!draft?.subject?.trim() && !draft?.body?.trim()){
+      toast.error('Generate a draft before marking this stage as sent.');
+      return;
+    }
     const now=new Date().toISOString();
     const daysToNext=(cadence[contact.status]??3);
     const nextDue=new Date(); nextDue.setDate(nextDue.getDate()+daysToNext); skipWeekend(nextDue);
     await supabase.from('contacts').update({
-      status:next, sequence_step:ALL_STAGES.indexOf(next),
+      status:next, sequence_step: ALL_STAGES.includes(next) ? ALL_STAGES.indexOf(next) : ALL_STAGES.length,
       last_contacted:now, last_touchpoint_date:now, next_followup:nextDue.toISOString(),
     }).eq('id',contact.id);
     // mark campaign active; if F5 sent mark complete
@@ -454,9 +459,15 @@ export default function FollowUps() {
     if(!window.confirm(`Switch ${name} from the Templated track to AI-personalized outreach? The templated sequence will stop, and AI-written follow-ups will take over from here.`)) return;
     setMarkingSent(contact.id);
     const now = new Date().toISOString();
-    if(ta){
-      await supabase.from('template_assignments').update({status:'cancelled', completed_at:now}).eq('id', ta.id);
-    }
+    // Cancel unconditionally by contact_id/status rather than relying on the
+    // locally-cached `ta` — if it wasn't loaded yet, the old code silently
+    // skipped the cancel, leaving a zombie "active" assignment behind.
+    // The DB's template_assignments_status_check constraint only allows
+    // 'active' or 'completed' — there is no 'cancelled' status. Using
+    // 'cancelled' here (as the old code did) always silently failed this
+    // check constraint, which is why switched-away contacts kept an
+    // orphaned "active" assignment forever.
+    await supabase.from('template_assignments').update({status:'completed', completed_at:now}).eq('contact_id', contact.id).eq('status', 'active');
     await supabase.from('contacts').update({track:'ai', next_followup:now}).eq('id', contact.id);
     await supabase.from('activity_log').insert({
       actor_id:user.id, contact_id:contact.id, activity_type:'track_changed',
