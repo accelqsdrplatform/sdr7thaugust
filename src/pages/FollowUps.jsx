@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
+import BulkSelectPopover from '../components/BulkSelectPopover';
 
 const DEFAULT_CADENCE = { Fresh: 3, F1: 3, F2: 4, F3: 7, F4: 7 };
 const STATUS_CADENCE_KEY = { F1: 'Fresh', F2: 'F1', F3: 'F2', F4: 'F3', F5: 'F4' };
@@ -127,6 +128,7 @@ export default function FollowUps() {
   const [lastSentFrom,   setLastSentFrom]   = useState('');
   const [lastSentTo,     setLastSentTo]     = useState('');
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkPickerOpen, setBulkPickerOpen] = useState(false);
   const [drafts, setDraftsRaw] = useState(() => {
     try {
       const raw=JSON.parse(localStorage.getItem('sdr_drafts')||'{}');
@@ -575,6 +577,26 @@ export default function FollowUps() {
     setSelectedIds(prev=>{ const next=new Set(prev); if(next.has(id)) next.delete(id); else next.add(id); return next; });
   }
   function clearSelection(){ setSelectedIds(new Set()); }
+  // Resolves the bulk picker's choice against the queue as currently
+  // filtered (filteredFresh + filteredActive are already in memory — this
+  // page has no server pagination, so there's no separate "all matching"
+  // fetch needed like Contacts.jsx).
+  function applyBulkSelection(choice){
+    setBulkPickerOpen(false);
+    const all=[...filteredFresh,...filteredActive];
+    if(choice.mode==='all'){ setSelectedIds(new Set(all.map(c=>c.id))); return; }
+    let picked=all;
+    if(choice.maxPerCompany){
+      const perCompanyCount={}; picked=[];
+      for(const c of all){
+        const key=c.company||'';
+        perCompanyCount[key]=(perCompanyCount[key]||0)+1;
+        if(perCompanyCount[key]<=choice.maxPerCompany) picked.push(c);
+      }
+    }
+    picked=picked.slice(0,choice.count);
+    setSelectedIds(new Set(picked.map(c=>c.id)));
+  }
   const totalInQueue=contacts.length;
   const sharedProps={
     accounts,drafts,drafting,draftOpen,copied,markingSent,contactListMap,lists,sentEmails,
@@ -637,6 +659,22 @@ export default function FollowUps() {
               {freshContacts.length} new</div>}
             <div style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:500,color:'#6b7280',background:'#f9fafb',border:'1px solid #e5e7eb'}}>
               {totalInQueue} in queue</div>
+          </div>
+          <div style={{position:'relative',marginRight:6}}>
+            <button onClick={()=>setBulkPickerOpen(o=>!o)}
+              style={{padding:'6px 12px',borderRadius:8,border:'1.5px solid #e5e7eb',background:'#fff',color:'#374151',fontSize:12,fontWeight:600,cursor:'pointer'}}>
+              Select... ▾
+            </button>
+            {bulkPickerOpen&&(
+              <div style={{position:'absolute',top:'100%',right:0,zIndex:50,marginTop:4}}>
+                <BulkSelectPopover
+                  pageCount={null}
+                  totalCount={filteredFresh.length+filteredActive.length}
+                  onCancel={()=>setBulkPickerOpen(false)}
+                  onApply={applyBulkSelection}
+                />
+              </div>
+            )}
           </div>
           {selectedIds.size>0&&(
             <>
