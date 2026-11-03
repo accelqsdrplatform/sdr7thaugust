@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'; import { markContactBounced } 
 import { logEmailResponse } from '../utils/emailResponses';
 import { toast } from 'sonner';
 import { normalizeIndustry } from '../constants/industryAliases';
+import BulkSelectPopover from '../components/BulkSelectPopover';
 
 const STATUSES = ['Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'won', 'lost', 'bounced', 'unsubscribed'];
 const FILTER_STATUSES = STATUSES.filter(s => s !== 'won' && s !== 'lost');
@@ -52,6 +53,8 @@ export default function Contacts() {
   const [noteDraft, setNoteDraft] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [selected, setSelected] = useState(new Set());
+  const [bulkPickerOpen, setBulkPickerOpen] = useState(false);
+  const [bulkResolving, setBulkResolving] = useState(false);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [batchStarting, setBatchStarting] = useState(false);
@@ -183,54 +186,42 @@ export default function Contacts() {
     setBouncedCount(rows.filter(c => c.status === 'bounced').length);
   }
 
-  async function fetchContacts() {
-    setLoading(true);
+  async function resolveAccountFilterIds() {
+    if (!(industryFilter || countryFilter || headcountFilter || acctNeverTouched || acctLastTouchFrom || acctLastTouchTo || freshCountFilter)) {
+      return { active: false };
+    }
+    let accQ = supabase.from('accounts_with_stats').select('id');
+    if (industryFilter) accQ = accQ.eq('industry', industryFilter);
+    if (countryFilter) accQ = accQ.eq('country', countryFilter);
+    if (headcountFilter === '1-50') accQ = accQ.gte('employee_count', 1).lte('employee_count', 50);
+    else if (headcountFilter === '51-200') accQ = accQ.gte('employee_count', 51).lte('employee_count', 200);
+    else if (headcountFilter === '201-1000') accQ = accQ.gte('employee_count', 201).lte('employee_count', 1000);
+    else if (headcountFilter === '1000+') accQ = accQ.gte('employee_count', 1001);
+    if (acctNeverTouched) accQ = accQ.is('last_touch_date', null);
+    else {
+      if (acctLastTouchFrom) accQ = accQ.gte('last_touch_date', acctLastTouchFrom);
+      if (acctLastTouchTo) accQ = accQ.lte('last_touch_date', acctLastTouchTo);
+    }
+    if (freshCountFilter === '0') accQ = accQ.eq('fresh_contact_count', 0);
+    else if (freshCountFilter === '1-5') accQ = accQ.gte('fresh_contact_count', 1).lte('fresh_contact_count', 5);
+    else if (freshCountFilter === '6-15') accQ = accQ.gte('fresh_contact_count', 6).lte('fresh_contact_count', 15);
+    else if (freshCountFilter === '16+') accQ = accQ.gte('fresh_contact_count', 16);
+    const { data: accRows } = await accQ;
+    return { active: true, ids: (accRows || []).map(a => a.id) };
+  }
 
-    let q = supabase
-      .from('contacts')
-      .select('*, accounts(id, name, industry)', { count: 'exact' });
-    if (!viewAll || !canViewAll) q = q.eq('owner_id', user.id);
+  async function resolveListFilterIds() {
+    if (!listFilter) return { active: false };
+    const lc = []; let o = 0;
+    for (;;) { const { data: d } = await supabase.from('contact_lists').select('contact_id').eq('list_id', listFilter).range(o, o + 999); if (!d?.length) break; lc.push(...d); if (d.length < 1000) break; o += 1000; }
+    return { active: true, ids: lc.map(r => r.contact_id) };
+  }
 
+  function applySimpleFilters(q) {
     if (filter !== 'all') q = q.eq('status', filter);
-
     if (debouncedSearch) {
       const s = `%${debouncedSearch}%`;
       q = q.or(`first_name.ilike.${s},last_name.ilike.${s},email.ilike.${s},company.ilike.${s}`);
-    }
-
-    if (industryFilter || countryFilter || headcountFilter || acctNeverTouched || acctLastTouchFrom || acctLastTouchTo || freshCountFilter) {
-      // These five filters live on the account, not the contact, so we resolve the
-      // matching account ids first (via accounts_with_stats, which carries
-      // fresh_contact_count + last_touch_date alongside the plain account columns)
-      // and then scope the contacts query to those accounts.
-      let accQ = supabase.from('accounts_with_stats').select('id');
-      if (industryFilter) accQ = accQ.eq('industry', industryFilter);
-      if (countryFilter) accQ = accQ.eq('country', countryFilter);
-      if (headcountFilter === '1-50') accQ = accQ.gte('employee_count', 1).lte('employee_count', 50);
-      else if (headcountFilter === '51-200') accQ = accQ.gte('employee_count', 51).lte('employee_count', 200);
-      else if (headcountFilter === '201-1000') accQ = accQ.gte('employee_count', 201).lte('employee_count', 1000);
-      else if (headcountFilter === '1000+') accQ = accQ.gte('employee_count', 1001);
-      if (acctNeverTouched) accQ = accQ.is('last_touch_date', null);
-      else {
-        if (acctLastTouchFrom) accQ = accQ.gte('last_touch_date', acctLastTouchFrom);
-        if (acctLastTouchTo) accQ = accQ.lte('last_touch_date', acctLastTouchTo);
-      }
-      if (freshCountFilter === '0') accQ = accQ.eq('fresh_contact_count', 0);
-      else if (freshCountFilter === '1-5') accQ = accQ.gte('fresh_contact_count', 1).lte('fresh_contact_count', 5);
-      else if (freshCountFilter === '6-15') accQ = accQ.gte('fresh_contact_count', 6).lte('fresh_contact_count', 15);
-      else if (freshCountFilter === '16+') accQ = accQ.gte('fresh_contact_count', 16);
-      const { data: accRows } = await accQ;
-      const accIds = (accRows || []).map(a => a.id);
-      if (accIds.length > 0) {
-        q = q.in('account_id', accIds);
-      } else {
-        setContacts([]);
-        setTotalCount(0);
-        setLoading(false);
-        setSelected(new Set());
-        fetchFilterOptions();
-        return;
-      }
     }
     if (pitchTypeFilter) q = q.eq('pitch_type', pitchTypeFilter);
     if (personaFilter)   q = q.eq('persona', personaFilter);
@@ -242,24 +233,7 @@ export default function Contacts() {
     if (hasEmailFilter === 'yes') q = q.not('email', 'is', null);
     if (hasEmailFilter === 'no')  q = q.is('email', null);
     if (jobChangeFilter === 'yes') q = q.eq('job_change_detected', true);
-
-    if (listFilter) {
-      // Paginated -- a large campaign list can exceed 1000 membership rows.
-      const lc = []; { let o = 0; for (;;) { const { data: d } = await supabase.from('contact_lists').select('contact_id').eq('list_id', listFilter).range(o, o + 999); if (!d?.length) break; lc.push(...d); if (d.length < 1000) break; o += 1000; } }
-      const ids = lc.map(r => r.contact_id);
-      if (ids.length === 0) {
-        setContacts([]);
-        setTotalCount(0);
-        setLoading(false);
-        setSelected(new Set());
-        fetchFilterOptions();
-        return;
-      }
-      q = q.in('id', ids);
-    }
-
     if (acctFilter) q = q.eq('account_id', acctFilter);
-
     if (dateAddedFilter) {
       if (dateAddedFilter === '7d')     q = q.gte('created_at', dayStart(7).toISOString());
       if (dateAddedFilter === '30d')    q = q.gte('created_at', dayStart(30).toISOString());
@@ -270,7 +244,6 @@ export default function Contacts() {
         if (dateAddedTo)   q = q.lte('created_at', new Date(dateAddedTo + 'T23:59:59').toISOString());
       }
     }
-
     if (lastReachedFilter) {
       if (lastReachedFilter === 'never') {
         q = q.is('last_touchpoint_date', null);
@@ -285,15 +258,81 @@ export default function Contacts() {
         }
       }
     }
+    return q;
+  }
 
-    q = q.order('created_at', { ascending: false }).range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+  async function buildFilteredQuery(selectStr, opts) {
+    const [acctRes, listRes] = await Promise.all([resolveAccountFilterIds(), resolveListFilterIds()]);
+    if ((acctRes.active && acctRes.ids.length === 0) || (listRes.active && listRes.ids.length === 0)) {
+      return { empty: true };
+    }
+    const make = () => {
+      let q = supabase.from('contacts').select(selectStr, opts);
+      if (!viewAll || !canViewAll) q = q.eq('owner_id', user.id);
+      if (acctRes.active) q = q.in('account_id', acctRes.ids);
+      if (listRes.active) q = q.in('id', listRes.ids);
+      q = applySimpleFilters(q);
+      return q;
+    };
+    return { empty: false, make };
+  }
 
-    const { data, count } = await q;
+  async function fetchContacts() {
+    setLoading(true);
+    const built = await buildFilteredQuery('*, accounts(id, name, industry)', { count: 'exact' });
+    if (built.empty) {
+      setContacts([]);
+      setTotalCount(0);
+      setLoading(false);
+      setSelected(new Set());
+      fetchFilterOptions();
+      return;
+    }
+    const { data, count } = await built.make().order('created_at', { ascending: false }).range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
     setContacts(data || []);
     setTotalCount(count || 0);
     setLoading(false);
     setSelected(new Set());
     fetchFilterOptions();
+  }
+
+  async function resolveAllMatchingContacts() {
+    const built = await buildFilteredQuery('id, company');
+    if (built.empty) return [];
+    const all = []; let o = 0;
+    for (;;) {
+      const { data } = await built.make().order('created_at', { ascending: false }).range(o, o + 999);
+      if (!data?.length) break;
+      all.push(...data);
+      if (data.length < 1000) break;
+      o += 1000;
+    }
+    return all;
+  }
+
+  async function applyBulkSelection(choice) {
+    setBulkPickerOpen(false);
+    if (choice.mode === 'page') {
+      setSelected(new Set(paginated.map(c => c.id)));
+      return;
+    }
+    setBulkResolving(true);
+    const rows = await resolveAllMatchingContacts();
+    let picked = rows;
+    if (choice.mode === 'count') {
+      if (choice.maxPerCompany) {
+        const perCompanyCount = {};
+        picked = [];
+        for (const r of rows) {
+          const key = r.company || '';
+          perCompanyCount[key] = (perCompanyCount[key] || 0) + 1;
+          if (perCompanyCount[key] <= choice.maxPerCompany) picked.push(r);
+        }
+      }
+      picked = picked.slice(0, choice.count);
+    }
+    setSelected(new Set(picked.map(r => r.id)));
+    setBulkResolving(false);
   }
 
   async function fetchLists() {
@@ -974,11 +1013,30 @@ export default function Contacts() {
         <table style={{ width: '100%', minWidth: 1100, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: '#fafafa', borderBottom: '1px solid #eee' }}>
-              <th style={{ padding: '10px 14px', width: 36 }}>
-                <input type="checkbox"
-                  checked={paginated.length > 0 && paginated.every(c => selected.has(c.id))}
-                  onChange={toggleSelectAll}
-                  style={{ cursor: 'pointer' }} />
+              <th style={{ padding: '10px 14px', width: 50, position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <input type="checkbox"
+                    checked={paginated.length > 0 && paginated.every(c => selected.has(c.id))}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: 'pointer' }} />
+                  <button onClick={() => setBulkPickerOpen(o => !o)} title="Bulk select..."
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: '#9ca3af', fontSize: 9, lineHeight: 1 }}>
+                    ▾
+                  </button>
+                </div>
+                {bulkPickerOpen && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 50, marginTop: 4 }}>
+                    <BulkSelectPopover
+                      pageCount={paginated.length}
+                      totalCount={totalCount}
+                      onCancel={() => setBulkPickerOpen(false)}
+                      onApply={applyBulkSelection}
+                    />
+                  </div>
+                )}
+                {bulkResolving && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 50, marginTop: 4, fontSize: 11, color: '#6b7280', background: '#fff', padding: '4px 10px', borderRadius: 6, border: '1px solid #e5e7eb' }}>Selecting…</div>
+                )}
               </th>
               {['Name', 'Company', 'Email', 'Title', 'Status', 'Response', 'Date Added', 'Last Reached Out', 'Actions'].map(h => (
                 <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>
