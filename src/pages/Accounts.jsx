@@ -1886,8 +1886,7 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
 
   function applyEnrichBulkSelection(choice) {
     setEnrichPickerOpen(false);
-    const enrichable = contacts.filter(c => !c.email || !c.linkedin_url);
-    setSelectedEnrich(new Set(enrichable.map(c => c.id)));
+    setSelectedEnrich(new Set(contacts.map(c => c.id)));
   }
 
   async function bulkEnrichSelected() {
@@ -2319,7 +2318,7 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
         {activeTab === 'contacts' && (
           <div style={{ maxWidth: 860 }}>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 16 }}>
-              {contacts.some(c => !c.email || !c.linkedin_url) && (
+              {contacts.length > 0 && (
                 <div style={{ position: 'relative' }}>
                   <button onClick={() => setEnrichPickerOpen(o => !o)}
                     style={{ padding: '7px 14px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
@@ -2330,7 +2329,7 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                       <BulkSelectPopover
                         allowCount={false}
                         pageCount={null}
-                        totalCount={contacts.filter(c => !c.email || !c.linkedin_url).length}
+                        totalCount={contacts.length}
                         onCancel={() => setEnrichPickerOpen(false)}
                         onApply={applyEnrichBulkSelection}
                       />
@@ -2363,10 +2362,8 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
                   const initColor = avatarColor((c.first_name + ' ' + (c.last_name || '')).trim());
                   return (
                     <div key={c.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-{(!c.email || !c.linkedin_url) && (
-                        <input type="checkbox" checked={selectedEnrich.has(c.id)} onChange={() => toggleEnrichSelect(c.id)}
-                          style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} title="Select for bulk enrich" />
-                      )}
+<input type="checkbox" checked={selectedEnrich.has(c.id)} onChange={() => toggleEnrichSelect(c.id)}
+                          style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} title="Select contact" />
                       <div style={{ width: 40, height: 40, borderRadius: '50%', background: initColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
                         {getInitials((c.first_name + ' ' + (c.last_name || '')).trim())}
                       </div>
