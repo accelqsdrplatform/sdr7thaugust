@@ -58,8 +58,15 @@ serve(async (req) => {
       const existingTools = (account.testing_tools || []).map((t: any) => t.tool).join(', ')
       const notes = account.notes || ''
 
-      // ── PHASE 1: Fast structured data (Haiku) ──────────────────────────
-      const structuredPrompt = `You are an expert B2B sales researcher for ACCELQ, an AI-powered test automation platform.
+      // ── Merged research call (Sonnet) ───────────────────────────────────
+      // Previously two separate Sonnet calls (structured facts + deep intel
+      // signals) run back to back, each paying for its own copy of the shared
+      // company context and each reasoning about the company in isolation.
+      // Combining them into one call cuts the duplicated instruction/context
+      // tokens, cuts the research-generation cost roughly in half, and tends
+      // to produce more internally-consistent output since the model reasons
+      // about facts and signals together instead of across two blind passes.
+      const combinedPrompt = `You are an expert B2B sales researcher and intelligence analyst for ACCELQ, an AI-powered codeless test automation platform. ACCELQ's value: QA teams eliminate fragile manual scripts and Selenium/Cypress maintenance using self-healing, codeless automation — teams cut test maintenance by 60-90% and shrink release cycles from weeks to days.
 
 Research this company for a sales intelligence brief:
 Company: ${account.name}
@@ -105,6 +112,10 @@ Return ONLY a valid JSON object (no markdown, no explanation) with exactly these
   "similar_companies": [
     {"name": "Company Name", "domain": "company.com", "reason": "One sentence why similar"},
     {"name": "Company Name", "domain": "company.com", "reason": "One sentence why similar"}
+  ],
+  "important_to_know": [
+    {"title": "Signal title here", "body": "Full paragraph body here"},
+    {"title": "Signal title here", "body": "Full paragraph body here"}
   ]
 }
 
@@ -137,34 +148,13 @@ Rules for saasApps — use detected industry:
 - Telecom: Amdocs, CSG, Netcracker, Oracle Communications
 - Technology: Jira, Confluence, GitHub, Okta, Snowflake
 
-Keep all arrays to 3-6 items max. Be specific and realistic for this company's size and industry.`
+Keep all arrays to 3-6 items max (except important_to_know, see below). Be specific and realistic for this company's size and industry.
 
-      const [structuredResp] = await Promise.all([
-        fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-          body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 4000, messages: [{ role: 'user', content: structuredPrompt }] })
-        })
-      ])
-
-      // ── PHASE 2: Deep Intel (Sonnet) — Important to Know ───────────────
-      const intelPrompt = `You are an elite sales intelligence analyst for ACCELQ, an AI-powered codeless test automation platform. ACCELQ's value: QA teams eliminate fragile manual scripts and Selenium/Cypress maintenance using self-healing, codeless automation — teams cut test maintenance by 60-90% and shrink release cycles from weeks to days.
-
-Company to research: ${account.name}
-Industry: ${account.industry || 'Unknown'}
-Country: ${account.country || 'Unknown'}
-Revenue: ${account.revenue_millions ? `$${account.revenue_millions}M` : 'Unknown'}
-Known contacts: ${contactsText || 'None'}
-SDR notes: ${notes || 'None'}
-
-Generate 3-5 "Important to Know" intelligence items. Each must follow this exact pattern:
-
-1. **Signal title** — A specific, concrete trigger or business event (NOT generic like "digital transformation")
-2. **Signal body** — 3-4 sentences structured as:
-   - What is actually happening (specific data, numbers, dates where known — e.g. layoffs count, hiring volume, product launch name, acquisition target)
-   - Why this creates an urgent testing infrastructure need (the business pressure it puts on QA/engineering)
-   - How this maps to the specific persona's pain (use language like "QA teams at ${account.industry || 'this type of'} companies face..." or reference their likely tech stack)
-   - One concrete ACCELQ capability that addresses it (self-healing automation, codeless scripts, protocol support, parallel test execution, CI/CD integration, etc.)
+Rules for important_to_know (3-5 items): Each item is a specific, concrete sales-intelligence signal — NOT generic like "digital transformation". Each body must be structured as:
+- What is actually happening (specific data, numbers, dates where known — e.g. layoffs count, hiring volume, product launch name, acquisition target)
+- Why this creates an urgent testing infrastructure need (the business pressure it puts on QA/engineering)
+- How this maps to the specific persona's pain (use language like "QA teams at ${account.industry || 'this type of'} companies face..." or reference their likely tech stack)
+- One concrete ACCELQ capability that addresses it (self-healing automation, codeless scripts, protocol support, parallel test execution, CI/CD integration, etc.)
 
 Examples of strong signal titles:
 - "Workforce reduction forces QA efficiency over headcount"
@@ -173,50 +163,32 @@ Examples of strong signal titles:
 - "Recent product launch demands accelerated release cycles"
 - "Compliance mandate drives automated audit trail requirements"
 
-Rules:
+Rules for important_to_know:
 - Be specific to ${account.name} — use what you know about this actual company
 - Include real numbers, timeframes, or named initiatives where you know them
 - Never be generic — each item must be unique to this company's actual situation
 - Connect every signal back to a concrete testing/QA implication
 - 150-250 words per item body
+- This must stay consistent with the facts given everywhere else in this JSON object (e.g. the same tech stack, industry, and pain points) — do not contradict your own "why", "tech", or "pain" fields.`
 
-Return ONLY a valid JSON array (no markdown):
-[
-  { "title": "Signal title here", "body": "Full paragraph body here" },
-  { "title": "Signal title here", "body": "Full paragraph body here" }
-]`
-
-      const intelRespPromise = fetch('https://api.anthropic.com/v1/messages', {
+      const combinedResp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 3500, messages: [{ role: 'user', content: intelPrompt }] })
+        body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 7500, messages: [{ role: 'user', content: combinedPrompt }] })
       })
 
-      // Await both
-      const [structuredData, intelResp] = await Promise.all([structuredResp.json(), intelRespPromise])
-
-      const rawStructured = extractText(structuredData) || '{}'
+      const combinedData = await combinedResp.json()
+      const rawCombined = extractText(combinedData) || '{}'
       let parsed: any = {}
       try {
-        parsed = parseJsonLoose(rawStructured)
+        parsed = parseJsonLoose(rawCombined)
       } catch {
-        return new Response(JSON.stringify({ error: 'AI returned invalid JSON for structured data', raw: rawStructured }), {
+        return new Response(JSON.stringify({ error: 'AI returned invalid JSON for research', raw: rawCombined }), {
           status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
 
-      // Parse intel
-      const intelData = await intelResp.json()
-      const rawIntel = extractText(intelData) || '[]'
-      let importantToKnow: any[] = []
-      try {
-        importantToKnow = parseJsonLoose(rawIntel)
-        if (!Array.isArray(importantToKnow)) importantToKnow = []
-      } catch {
-        importantToKnow = []
-      }
-
-      parsed.important_to_know = importantToKnow
+      if (!Array.isArray(parsed.important_to_know)) parsed.important_to_know = []
 
       return new Response(JSON.stringify({ full: parsed }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -238,7 +210,7 @@ Return ONLY a valid JSON array (no markdown):
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 300, messages: [{ role: 'user', content: prompt }] })
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 300, messages: [{ role: 'user', content: prompt }] })
     })
 
     const aiData = await response.json()
