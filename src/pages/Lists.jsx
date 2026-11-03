@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import BulkSelectPopover from '../components/BulkSelectPopover';
 
 function normalizeDomain(url) {
   if (!url) return '';
@@ -103,6 +104,7 @@ export default function Lists() {
   const [platformLoading, setPlatformLoading] = useState(false);
   const [platformSearch, setPlatformSearch] = useState('');
   const [platformSelected, setPlatformSelected] = useState(new Set());
+  const [platformPickerOpen, setPlatformPickerOpen] = useState(false);
   const [platformAdding, setPlatformAdding] = useState(false);
 
   // CSV upload state
@@ -371,6 +373,11 @@ export default function Lists() {
       if (s.has(id)) s.delete(id); else s.add(id);
       return s;
     });
+  }
+
+  function applyPlatformBulkSelection(choice) {
+    setPlatformPickerOpen(false);
+    setPlatformSelected(new Set(platformFiltered.map(c => c.id)));
   }
 
   async function addFromPlatform() {
@@ -863,6 +870,24 @@ export default function Lists() {
             <input value={platformSearch} onChange={e => setPlatformSearch(e.target.value)}
               placeholder="Search by name, email, or company…"
               style={{ padding: '8px 12px', borderRadius: 8, border: '1.5px solid #d1d5db', fontSize: 13, outline: 'none', marginBottom: 10 }} />
+
+            <div style={{ position: 'relative', marginBottom: 10, alignSelf: 'flex-start' }}>
+              <button onClick={() => setPlatformPickerOpen(o => !o)}
+                style={{ padding: '6px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', background: '#fff', color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Select... ▾
+              </button>
+              {platformPickerOpen && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 50, marginTop: 4 }}>
+                  <BulkSelectPopover
+                    allowCount={false}
+                    pageCount={null}
+                    totalCount={platformFiltered.length}
+                    onCancel={() => setPlatformPickerOpen(false)}
+                    onApply={applyPlatformBulkSelection}
+                  />
+                </div>
+              )}
+            </div>
 
             {platformLoading ? (
               <div style={{ textAlign: 'center', padding: '30px 0', color: '#9ca3af', fontSize: 13 }}>Loading contacts...</div>
