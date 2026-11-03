@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { GICS_SECTORS } from '../constants/industries';
 import { toast } from 'sonner';
+import BulkSelectPopover from '../components/BulkSelectPopover';
 
 const STATUS_COLORS = {
   prospecting:  { bg: '#e0f2fe', color: '#0369a1' },
@@ -59,6 +60,9 @@ export default function AccountDetail() {
   const [showAllSimilar, setShowAllSimilar] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [emailsSentCount, setEmailsSentCount] = useState(0);
+  const [selectedContacts, setSelectedContacts] = useState(new Set());
+  const [contactPickerOpen, setContactPickerOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => { fetchAll(); }, [id]);
 
@@ -69,6 +73,36 @@ export default function AccountDetail() {
       return;
     }
     setDeleteConfirm(null);
+    fetchAll();
+  }
+
+  function toggleContactSelect(contactId) {
+    setSelectedContacts(prev => {
+      const next = new Set(prev);
+      if (next.has(contactId)) next.delete(contactId); else next.add(contactId);
+      return next;
+    });
+  }
+
+  function applyContactBulkSelection(choice) {
+    setContactPickerOpen(false);
+    const selectable = contacts.filter(c => c.owner_id === user.id);
+    if (choice.mode === 'all') { setSelectedContacts(new Set(selectable.map(c => c.id))); return; }
+    const picked = selectable.slice(0, choice.count);
+    setSelectedContacts(new Set(picked.map(c => c.id)));
+  }
+
+  async function bulkDeleteContacts() {
+    setBulkDeleting(true);
+    const ids = [...selectedContacts];
+    const { error } = await supabase.from('contacts').delete().in('id', ids).eq('owner_id', user.id);
+    if (error) {
+      toast.error('Could not delete contacts: ' + error.message);
+      setBulkDeleting(false);
+      return;
+    }
+    setSelectedContacts(new Set());
+    setBulkDeleting(false);
     fetchAll();
   }
 
@@ -441,6 +475,33 @@ export default function AccountDetail() {
               </div>
             );
           })()}
+          {contacts.some(c => c.owner_id === user.id) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, position: 'relative' }}>
+              <button onClick={() => setContactPickerOpen(o => !o)}
+                style={{ fontSize: 12, padding: '6px 12px', borderRadius: 7, border: '1px solid #e0e0e0', background: '#fff', color: '#374151', cursor: 'pointer', fontWeight: 500 }}>
+                Select... ▾
+              </button>
+              {contactPickerOpen && (
+                <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 20 }}>
+                  <BulkSelectPopover pageCount={null} totalCount={contacts.filter(c => c.owner_id === user.id).length}
+                    onCancel={() => setContactPickerOpen(false)} onApply={applyContactBulkSelection} />
+                </div>
+              )}
+              {selectedContacts.size > 0 && (
+                <>
+                  <span style={{ fontSize: 12, color: '#555' }}>{selectedContacts.size} selected</span>
+                  <button onClick={bulkDeleteContacts} disabled={bulkDeleting}
+                    style={{ fontSize: 12, padding: '6px 12px', borderRadius: 7, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer', fontWeight: 500 }}>
+                    {bulkDeleting ? 'Deleting…' : `Delete ${selectedContacts.size}`}
+                  </button>
+                  <button onClick={() => setSelectedContacts(new Set())}
+                    style={{ fontSize: 12, padding: '6px 12px', borderRadius: 7, border: '1px solid #e0e0e0', background: '#fff', color: '#6b7280', cursor: 'pointer' }}>
+                    Clear
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           {contacts.length === 0 ? (
             <div style={{ padding: 32, textAlign: 'center', color: '#aaa', background: '#fff', borderRadius: 10, border: '1px solid #e8e8e4' }}>
               No contacts linked to this account yet.<br />
@@ -451,7 +512,7 @@ export default function AccountDetail() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid #e8e8e4' }}>
-                    {['Name', 'Title', 'Email', 'Status', 'Response', 'Date Added', 'Last Reached Out', ''].map(h => (
+                    {['', 'Name', 'Title', 'Email', 'Status', 'Response', 'Date Added', 'Last Reached Out', ''].map(h => (
                       <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, color: '#999', fontWeight: 500 }}>{h}</th>
                     ))}
                   </tr>
@@ -462,6 +523,12 @@ export default function AccountDetail() {
                     const isOwner = c.owner_id === user.id;
                     return (
                       <tr key={c.id} style={{ borderBottom: '1px solid #f5f5f5', opacity: isOwner ? 1 : 0.85 }}>
+                        <td style={{ padding: '10px 14px' }}>
+                          {isOwner && (
+                            <input type="checkbox" checked={selectedContacts.has(c.id)} onChange={() => toggleContactSelect(c.id)}
+                              style={{ accentColor: '#2563eb', width: 15, height: 15, cursor: 'pointer' }} />
+                          )}
+                        </td>
                         <td style={{ padding: '10px 14px', fontWeight: 500 }}>
                           {c.full_name}
                           {!isOwner && <span style={{ marginLeft: 6, fontSize: 10, color: '#aaa', fontWeight: 400 }}>view only</span>}
