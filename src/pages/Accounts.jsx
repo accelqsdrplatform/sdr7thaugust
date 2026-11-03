@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { GICS_SECTORS } from '../constants/industries';
 import { toast } from 'sonner';
+import BulkSelectPopover from '../components/BulkSelectPopover';
 
 const LEGACY_TOOLS = ['selenium','uft','tosca','soapui','qtp','silktest','winrunner','loadrunner','jmeter','rational'];
 const MODERN_TOOLS = ['cypress','playwright','webdriverio','testcafe','k6','appium','detox','jest','pytest','robot framework'];
@@ -1197,6 +1198,7 @@ function AccountDetail({ account, contacts, onUpdate, onContactStarted, navigate
   const [savingNote, setSavingNote] = useState(false);
   const [enrichingContact, setEnrichingContact] = useState(null);
   const [selectedEnrich, setSelectedEnrich] = useState(new Set());
+  const [enrichPickerOpen, setEnrichPickerOpen] = useState(false);
   const [bulkEnriching, setBulkEnriching] = useState(null);
   const [liDraft, setLiDraft] = useState('');
   const [savedLinkedInUrls, setSavedLinkedInUrls] = useState({});
@@ -1857,6 +1859,12 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
     });
   }
 
+  function applyEnrichBulkSelection(choice) {
+    setEnrichPickerOpen(false);
+    const enrichable = contacts.filter(c => !c.email || !c.linkedin_url);
+    setSelectedEnrich(new Set(enrichable.map(c => c.id)));
+  }
+
   async function bulkEnrichSelected() {
     const ids = [...selectedEnrich];
     if (ids.length === 0) return;
@@ -2282,6 +2290,25 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
         {activeTab === 'contacts' && (
           <div style={{ maxWidth: 860 }}>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 16 }}>
+              {contacts.some(c => !c.email || !c.linkedin_url) && (
+                <div style={{ position: 'relative' }}>
+                  <button onClick={() => setEnrichPickerOpen(o => !o)}
+                    style={{ padding: '7px 14px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
+                    Select... ▾
+                  </button>
+                  {enrichPickerOpen && (
+                    <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 50, marginTop: 4 }}>
+                      <BulkSelectPopover
+                        allowCount={false}
+                        pageCount={null}
+                        totalCount={contacts.filter(c => !c.email || !c.linkedin_url).length}
+                        onCancel={() => setEnrichPickerOpen(false)}
+                        onApply={applyEnrichBulkSelection}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
               {selectedEnrich.size > 0 && (
                 <button onClick={bulkEnrichSelected} disabled={!!bulkEnriching} style={{ padding: '7px 14px', background: bulkEnriching ? '#ede9fe' : '#7c3aed', color: '#fff', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: bulkEnriching ? 'not-allowed' : 'pointer', border: 'none' }}>
                   {bulkEnriching ? `Enriching… ${bulkEnriching}` : `✨ Enrich Selected (${selectedEnrich.size})`}
