@@ -63,6 +63,8 @@ export default function AccountDetail() {
   const [selectedContacts, setSelectedContacts] = useState(new Set());
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   useEffect(() => { fetchAll(); }, [id]);
 
@@ -104,6 +106,23 @@ export default function AccountDetail() {
     setSelectedContacts(new Set());
     setBulkDeleting(false);
     fetchAll();
+  }
+
+  async function deleteAccount() {
+    if (contacts.length > 0) {
+      toast.error('Remove or reassign all contacts linked to this account before deleting it.');
+      setShowDeleteAccountConfirm(false);
+      return;
+    }
+    setDeletingAccount(true);
+    const { error } = await supabase.from('accounts').delete().eq('id', id);
+    if (error) {
+      toast.error('Could not delete account: ' + error.message);
+      setDeletingAccount(false);
+      return;
+    }
+    toast.success('Account deleted');
+    navigate('/accounts');
   }
 
   async function fetchCompanyNotes(companyName) {
@@ -284,11 +303,17 @@ export default function AccountDetail() {
             </div>
           </div>
 
-          {/* Edit button */}
-          <button onClick={() => setEditing(!editing)}
-            style={{ fontSize: 12, padding: '6px 14px', borderRadius: 7, border: '1px solid #e0e0e0', background: '#fff', color: '#555', cursor: 'pointer', flexShrink: 0 }}>
-            {editing ? 'Cancel' : '✏️ Edit'}
-          </button>
+          {/* Edit / Delete buttons */}
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button onClick={() => setEditing(!editing)}
+              style={{ fontSize: 12, padding: '6px 14px', borderRadius: 7, border: '1px solid #e0e0e0', background: '#fff', color: '#555', cursor: 'pointer' }}>
+              {editing ? 'Cancel' : '✏️ Edit'}
+            </button>
+            <button onClick={() => setShowDeleteAccountConfirm(true)}
+              style={{ fontSize: 12, padding: '6px 14px', borderRadius: 7, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer' }}>
+              🗑️ Delete
+            </button>
+          </div>
         </div>
 
         {/* Inline Edit Form */}
@@ -570,6 +595,34 @@ export default function AccountDetail() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {showDeleteAccountConfirm && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 10, padding: 24, maxWidth: 380, boxShadow: '0 10px 30px rgba(0,0,0,0.15)' }}>
+            {contacts.length > 0 ? (
+              <div style={{ fontSize: 14, marginBottom: 16 }}>
+                This account has <strong>{contacts.length}</strong> contact{contacts.length > 1 ? 's' : ''} linked. Remove or reassign them before deleting this account.
+              </div>
+            ) : (
+              <div style={{ fontSize: 14, marginBottom: 16 }}>
+                Delete <strong>{account.name}</strong>? This cannot be undone.
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowDeleteAccountConfirm(false)}
+                style={{ fontSize: 13, padding: '6px 14px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#333', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              {contacts.length === 0 && (
+                <button onClick={deleteAccount} disabled={deletingAccount}
+                  style={{ fontSize: 13, padding: '6px 14px', borderRadius: 6, border: 'none', background: '#dc2626', color: '#fff', cursor: 'pointer' }}>
+                  {deletingAccount ? 'Deleting…' : 'Delete'}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
