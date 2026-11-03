@@ -1487,17 +1487,17 @@ setSaving(false);
   async function runStartContact(c, mailbox) {
     setQualifying(c.id);
     const now = new Date().toISOString();
-    const updatePayload = { status: 'Fresh', next_followup: now, track: startTrack };
-    if (!c.sender_account_id && mailbox) {
-      updatePayload.sender_account_id = mailbox.id;
-      updatePayload.sender_email = mailbox.email_address;
-    }
-    await supabase.from('contacts').update(updatePayload).eq('id', c.id);
+    // Close out any assignment left over from a prior run on this contact
+    // before starting fresh, so a restart can never leave two "active" rows
+    // or a zombie one behind. (The DB only allows status 'active'/'completed'
+    // — there is no 'cancelled' — so we mark it 'completed' here.)
+    await supabase.from('template_assignments').update({ status: 'completed', completed_at: now }).eq('contact_id', c.id).eq('status', 'active');
+    let effectiveTrack = startTrack;
     if (startTrack === 'templated' && startTemplateId) {
       const templateRow = templateOptions.find(t => t.id === startTemplateId);
       if (templateRow) {
         const meta = await getTemplateStepsMeta(templateRow.id);
-        await supabase.from('template_assignments').insert({
+        const { error: taError } = await supabase.from('template_assignments').insert({
           contact_id: c.id,
           template_id: templateRow.id,
           template_name: templateRow.name || '',
@@ -1507,11 +1507,23 @@ setSaving(false);
           status: 'active',
           assigned_by: user.id
         });
+        // Never leave the contact reading track:'templated' with no assignment
+        // backing it — that's the exact state that showed an empty "Templated"
+        // draft with no way to recover except starting over.
+        if (taError) effectiveTrack = 'ai';
+      } else {
+        effectiveTrack = 'ai';
       }
     }
+    const updatePayload = { status: 'Fresh', next_followup: now, track: effectiveTrack };
+    if (!c.sender_account_id && mailbox) {
+      updatePayload.sender_account_id = mailbox.id;
+      updatePayload.sender_email = mailbox.email_address;
+    }
+    await supabase.from('contacts').update(updatePayload).eq('id', c.id);
     await supabase.from('activity_log').insert({
       actor_id: user.id, contact_id: c.id,
-      activity_type: 'outreach_started', details: { started_from: 'accounts' }
+      activity_type: 'outreach_started', details: { started_from: 'accounts', track: effectiveTrack }
     });
     setQualifying(null);
     setPendingStartContact(null);
