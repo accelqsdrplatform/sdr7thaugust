@@ -1207,6 +1207,8 @@ function AccountDetail({ account, contacts, onUpdate, onContactStarted, navigate
   const [enrichingContact, setEnrichingContact] = useState(null);
   const [selectedEnrich, setSelectedEnrich] = useState(new Set());
   const [enrichPickerOpen, setEnrichPickerOpen] = useState(false);
+  const enrichPickerBtnRef = useRef(null);
+  const [enrichPickerPos, setEnrichPickerPos] = useState({ top: 0, left: 0 });
   const [bulkEnriching, setBulkEnriching] = useState(null);
   const [liDraft, setLiDraft] = useState('');
   const [savedLinkedInUrls, setSavedLinkedInUrls] = useState({});
@@ -2320,12 +2322,16 @@ if (r.employee_count_range && !data.employee_count) updates.employee_count = r.e
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 16 }}>
               {contacts.length > 0 && (
                 <div style={{ position: 'relative' }}>
-                  <button onClick={() => setEnrichPickerOpen(o => !o)}
+                  <button ref={enrichPickerBtnRef} onClick={() => {
+                      const r = enrichPickerBtnRef.current ? enrichPickerBtnRef.current.getBoundingClientRect() : null;
+                      if (r) setEnrichPickerPos({ top: r.bottom + 6, left: Math.max(8, r.right - 280) });
+                      setEnrichPickerOpen(o => !o);
+                    }}
                     style={{ padding: '7px 14px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
                     Select... ▾
                   </button>
                   {enrichPickerOpen && (
-                    <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 50, marginTop: 4 }}>
+                    <div style={{ position: 'fixed', top: enrichPickerPos.top, left: enrichPickerPos.left, zIndex: 2000 }}>
                       <BulkSelectPopover
                         allowCount={false}
                         pageCount={null}
