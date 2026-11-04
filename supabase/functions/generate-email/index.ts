@@ -75,6 +75,13 @@ open. Zero selling. Ask for nothing. No deadline, no guilt, no reference to
 closing their file.`,
 }
 
+// Hard numeric caps mirroring STAGE_SPEC above - enforced in code after
+// generation, since the model does not reliably obey the prose instruction
+// alone, especially on later-stage emails with more context to draw on.
+const STAGE_WORD_LIMITS: Record<string, number> = {
+  Fresh: 100, F1: 50, F2: 80, F3: 60, F4: 50, F5: 70,
+}
+
 // Fixed rotation of 6 general pain axes, one assigned per stage so each email
 // in the sequence works a different angle. Not account-specific yet - there is
 // no per-account axis data model today. Swap AXES_BY_STAGE for a real
@@ -628,9 +635,32 @@ Return ONLY valid JSON:
       .replace(/\n{1,2}(thanks|best|regards|best regards|warm regards|cheers|sincerely)[,!.]?\s*$/i, '')
       .trim()
 
+    // Hard safety net: truncate the body to the stage's word cap, preferring
+    // to cut at a sentence boundary so it still reads cleanly. Falls back to a
+    // raw word-count cut if even the first sentence exceeds the limit.
+    const enforceWordLimit = (text: string, limit: number): string => {
+      const trimmed = (text || '').trim()
+      if (!trimmed) return trimmed
+      const words = trimmed.split(/\s+/)
+      if (words.length <= limit) return trimmed
+      const sentences = trimmed.split(/(?<=[.?!])\s+/)
+      let result = ''
+      let count = 0
+      for (const s of sentences) {
+        const w = s.trim().split(/\s+/).filter(Boolean).length
+        if (count + w > limit) break
+        result += (result ? ' ' : '') + s.trim()
+        count += w
+      }
+      if (!result) {
+        result = words.slice(0, limit).join(' ')
+      }
+      return result
+    }
+
     return new Response(JSON.stringify({
       subject: cleanSubject(parsed.subject),
-      body: stripSignoff(clean(parsed.body)),
+      body: enforceWordLimit(stripSignoff(clean(parsed.body)), STAGE_WORD_LIMITS[stageKey] || 999),
       hook_used: parsed.hook_used || null,
       facts_asserted: Array.isArray(parsed.facts_asserted) ? parsed.facts_asserted : [],
       unverified: Array.isArray(parsed.unverified) ? parsed.unverified : [],
