@@ -52,7 +52,7 @@ const STAGE_SPEC: Record<string, string> = {
   2. What ACCELQ changes, tied to a business outcome.
   3. A question.
 CTA: a question answerable in one line. No meeting duration, no time, no link.`,
-  F1: `Follow-up 1. Under 80 words.
+  F1: `Follow-up 1. Under 50 words.
 A genuinely different angle from Fresh: different pain, different entry point.
 Not a reminder. Do not reference the previous email in any way.
 CTA: a question, different from the one already asked.`,
