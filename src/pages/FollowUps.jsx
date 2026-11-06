@@ -487,7 +487,11 @@ export default function FollowUps() {
   }
 
   async function bulkGenerateDrafts(){
-    const list=selectedContacts().filter(c=>!drafts[c.id]);
+    // Templated-track contacts don't use AI drafts at all — their content is
+    // the canned template_assignments step, shown via "View Step". Routing
+    // them through doGenerate() here used to silently AI-generate and
+    // overwrite that, which is wrong for a templated contact.
+    const list=selectedContacts().filter(c=>c.track!=='templated'&&!drafts[c.id]);
     if(!list.length) return;
     setBulkGenerating(true);
     for(const c of list){
@@ -503,7 +507,15 @@ export default function FollowUps() {
     if(!window.confirm(`Mark ${list.length} contact${list.length!==1?'s':''} as sent? Each will advance to its next follow-up stage.`)) return;
     setBulkMarking(true);
     for(const c of list){
-      await markSentCore(c);
+      // Templated-track contacts must advance template_assignments.current_step
+      // (markSentTemplate), not contacts.status via the AI-track markSentCore —
+      // using markSentCore here desyncs status from current_step and leaves the
+      // Queue/CSV showing the wrong step's content.
+      if(c.track==='templated'){
+        if(templateAssignments[c.id]) await markSentTemplate(c);
+      } else {
+        await markSentCore(c);
+      }
     }
     setBulkMarking(false);
     clearSelection();
