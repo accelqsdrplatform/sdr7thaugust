@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext'; import { markContactBounced } from '../utils/bounce';
-import { logEmailResponse } from '../utils/emailResponses';
+import { logEmailResponse, clearEmailResponse } from '../utils/emailResponses';
 import { toast } from 'sonner';
 import { normalizeIndustry } from '../constants/industryAliases';
 import BulkSelectPopover from '../components/BulkSelectPopover';
@@ -423,6 +423,7 @@ export default function Contacts() {
     await supabase.from('contacts').update({ response_type: val }).eq('id', id);
     await supabase.from('activity_log').insert({ actor_id: user.id, contact_id: id, activity_type: 'response_set', details: { response_type: val } });
     if (val) await logEmailResponse(id, user.id, val);
+    else await clearEmailResponse(id);
     fetchContacts();
   }
 
