@@ -127,7 +127,7 @@ function StatCard({ label, value, sub, color }) {
 // custom), scoped to either the viewer's own book or their whole team.
 // Shared across SDR/POC/Manager/Director dashboards so the range picker and
 // metric definitions stay identical everywhere they appear.
-export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, defaultView }) {
+export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, defaultView, onRangeChange }) {
   const teamIds = (teamMembers || []).map(m => m.id);
   const ownerNameById = Object.fromEntries((teamMembers || []).map(m => [m.id, m.name]));
   const [range, setRange] = useState(7);
@@ -184,6 +184,7 @@ export default function EmailMetricsPanel({ ownIds, teamMembers, showToggle, def
     setLoading(true);
     const { start, end } = computeRange(range, customFrom, customTo);
     const startIso = start.toISOString(), endIso = end.toISOString();
+    if (onRangeChange) onRangeChange({ start, end });
     const ids = scopeIds && scopeIds.length ? scopeIds : ['00000000-0000-0000-0000-000000000000'];
 
     const [{ count: emailsSent }, { count: responses }, { count: contactsAdded }, breakdownRes, dailyRowsRes, { count: freshYetToContact }] = await Promise.all([
