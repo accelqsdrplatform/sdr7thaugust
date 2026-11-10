@@ -10,6 +10,8 @@ export default function DirectorDashboard() {
   const [activity, setActivity] = useState([]);
   const [teamIds, setTeamIds] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
+  const [sdrList, setSdrList] = useState([]);
+  const [dateRange, setDateRange] = useState(() => ({ start: new Date(Date.now() - 7 * 86400000), end: new Date() }));
 
   useEffect(() => {
     async function load() {
@@ -56,30 +58,62 @@ export default function DirectorDashboard() {
       setTeamIds(everyone.map(s => s.user_id));
       setTeamMembers(everyone.map(s => ({ id: s.user_id, name: s.full_name })));
 
-      const ownerIds = sdrs.map(s => s.user_id);
-      const { data: statsRows } = ownerIds.length
-        ? await supabase.rpc('team_stats_by_owner', { ids: ownerIds })
-        : { data: [] };
-      const statsByOwner = Object.fromEntries((statsRows || []).map(r => [r.owner_id, r]));
-
-      const board = sdrs.map(s => {
-        const st = statsByOwner[s.user_id] || { active: 0, replies: 0, meetings: 0, won: 0, bounced: 0 };
-        return {
-          id: s.id,
-          name: s.full_name,
-          region: s.region,
-          active: st.active,
-          replied: st.replies,
-          meetings: st.meetings,
-          won: st.won,
-          bounced: st.bounced,
-          rate: st.active ? Math.round((st.replies / st.active) * 100) : 0,
-        };
-      }).sort((a, b) => b.replied - a.replied);
-      setLeaderboard(board);
+      setSdrList(sdrs);
     }
     load();
   }, []);
+
+  async function loadLeaderboard(sdrs, ids, range) {
+    if (!ids.length || !range) { setLeaderboard([]); return; }
+    const { data: statsRows } = await supabase.rpc('team_stats_by_owner_scored', {
+      ids,
+      start_ts: range.start.toISOString(),
+      end_ts: range.end.toISOString(),
+    });
+    const statsByOwner = Object.fromEntries((statsRows || []).map(r => [r.owner_id, r]));
+    const blank = {
+      active: 0, yet_to_contact: 0, replies: 0, meetings: 0, won: 0, bounced: 0,
+      new_contacts: 0, emails_fresh: 0, emails_f1: 0, emails_f2: 0, emails_f3: 0, emails_f4: 0, emails_f5: 0,
+      templated_step1: 0, templated_step2: 0, prospect_responses: 0, warm_responses: 0,
+      not_interested_responses: 0, negative_responses: 0, total_responses: 0, activity_count: 0,
+      contacts_ai: 0, contacts_templated: 0, total_accounts: 0, accounts_added: 0, active_accounts: 0, inactive_accounts: 0,
+    };
+    const rows = sdrs.map(s => ({ id: s.id, name: s.full_name, region: s.region, ...(statsByOwner[s.user_id] || blank) }));
+
+    // Composite score, agreed weighting: Prospect responses 20%, any response
+    // 10%, new contacts added 20%, active contacts (excl. Yet to Contact) 20%,
+    // platform activity 10%, account coverage 20%. Count-based factors are
+    // normalized against the best performer in the selected range (0..1)
+    // before weighting, so one rep's larger book doesn't set the scale for
+    // everyone; account coverage is already a 0..1 ratio.
+    const maxOf = key => Math.max(1, ...rows.map(r => r[key] || 0));
+    const maxProspect = maxOf('prospect_responses');
+    const maxAnyResponse = maxOf('total_responses');
+    const maxNewContacts = maxOf('new_contacts');
+    const maxActive = maxOf('active');
+    const maxActivity = maxOf('activity_count');
+
+    const scored = rows.map(r => {
+      const coverage = r.total_accounts > 0 ? r.active_accounts / r.total_accounts : 0;
+      const score = Math.round(100 * (
+        0.20 * (r.prospect_responses / maxProspect) +
+        0.10 * (r.total_responses / maxAnyResponse) +
+        0.20 * (r.new_contacts / maxNewContacts) +
+        0.20 * (r.active / maxActive) +
+        0.10 * (r.activity_count / maxActivity) +
+        0.20 * coverage
+      ));
+      return { ...r, coveragePct: Math.round(coverage * 100), score,
+        rate: r.active ? Math.round((r.replies / r.active) * 100) : 0 };
+    }).sort((a, b) => b.score - a.score);
+
+    setLeaderboard(scored);
+  }
+
+  useEffect(() => {
+    const ids = sdrList.map(s => s.user_id);
+    loadLeaderboard(sdrList, ids, dateRange);
+  }, [sdrList, dateRange && dateRange.start && dateRange.start.getTime(), dateRange && dateRange.end && dateRange.end.getTime()]);
 
   const replyRate = stats.total ? Math.round((stats.replies / stats.total) * 100) : 0;
 
@@ -90,7 +124,7 @@ export default function DirectorDashboard() {
         <p style={{ fontSize: 13, color: '#888', margin: '3px 0 0' }}>{profile?.full_name} · Admin · All teams</p>
       </div>
 
-      <EmailMetricsPanel ownIds={[user.id]} teamMembers={teamMembers} showToggle defaultView="team" />
+      <EmailMetricsPanel ownIds={[user.id]} teamMembers={teamMembers} showToggle defaultView="team" onRangeChange={setDateRange} />
 
       {/* Stats grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 20 }}>
@@ -115,33 +149,66 @@ export default function DirectorDashboard() {
         <strong style={{ fontSize: 18 }}>{replyRate}%</strong>
       </div>
 
-      {/* Leaderboard */}
+            {/* Leaderboard */}
       <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
-        <div style={{ padding: '12px 16px', borderBottom: '0.5px solid #e8e8e4', fontSize: 13, fontWeight: 600, color: '#111' }}>Owner leaderboard</div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <div style={{ padding: '12px 16px', borderBottom: '0.5px solid #e8e8e4' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>Owner leaderboard</div>
+          <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
+            Ranked by a combined score for the date range selected above: Prospect responses 20%, any response 10%, new contacts added 20%, active contacts (excl. Yet to Contact) 20%, platform activity 10%, account coverage 20%.
+          </div>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap' }}>
           <thead>
             <tr style={{ borderBottom: '0.5px solid #f0f0ee' }}>
-              {['#', 'Owner', 'Region', 'Active', 'Replies', 'Meetings', 'Won', 'Bounced', 'Rate'].map(h => (
-                <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, color: '#999', fontWeight: 500 }}>{h}</th>
+              {['#', 'Owner', 'Region', 'Score', 'Active', 'Yet to Contact', 'New', 'Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'Tmpl 1', 'Tmpl 2', 'Prospect', 'Warm', 'Not Int.', 'Negative', 'AI', 'Templated', 'Total Accts', 'Accts Added', 'Active Accts', 'Inactive Accts', 'Replies', 'Meetings', 'Won', 'Bounced', 'Rate'].map(h => (
+                <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, color: '#999', fontWeight: 500 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {leaderboard.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#aaa' }}>No owners found in org_hierarchy.</td></tr>
+              <tr><td colSpan={30} style={{ padding: 24, textAlign: 'center', color: '#aaa' }}>No owners found in org_hierarchy.</td></tr>
             ) : leaderboard.map((s, i) => (
               <tr key={s.id} style={{ borderBottom: '0.5px solid #f5f5f3', background: i === 0 ? '#fffbeb' : 'transparent' }}>
-                <td style={{ padding: '9px 12px', fontWeight: 600, color: i === 0 ? '#d97706' : '#999' }}>
-                  {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
+                <td style={{ padding: '9px 10px', fontWeight: 600, color: i === 0 ? '#d97706' : '#999' }}>
+                  {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : ('#' + (i + 1))}
                 </td>
-                <td style={{ padding: '9px 12px', fontWeight: 500 }}>{s.name}</td>
-                <td style={{ padding: '9px 12px', color: '#888', fontSize: 12 }}>{s.region || '—'}</td>
-                <td style={{ padding: '9px 12px' }}>{s.active}</td>
-                <td style={{ padding: '9px 12px', color: '#059669', fontWeight: 500 }}>{s.replied}</td>
-                <td style={{ padding: '9px 12px', color: '#7c3aed' }}>{s.meetings}</td>
-                <td style={{ padding: '9px 12px', color: '#16a34a', fontWeight: 500 }}>{s.won}</td>
-                <td style={{ padding: '9px 12px', color: '#dc2626' }}>{s.bounced}</td>
-                <td style={{ padding: '9px 12px' }}>
+                <td style={{ padding: '9px 10px', fontWeight: 500 }}>{s.name}</td>
+                <td style={{ padding: '9px 10px', color: '#888', fontSize: 12 }}>{s.region || '—'}</td>
+                <td style={{ padding: '9px 10px' }}>
+                  <span style={{ padding: '3px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+                    background: s.score >= 60 ? '#dcfce7' : s.score >= 30 ? '#fef9c3' : '#fee2e2',
+                    color: s.score >= 60 ? '#15803d' : s.score >= 30 ? '#854d0e' : '#991b1b' }}>
+                    {s.score}
+                  </span>
+                </td>
+                <td style={{ padding: '9px 10px' }}>{s.active}</td>
+                <td style={{ padding: '9px 10px', color: '#888' }}>{s.yet_to_contact}</td>
+                <td style={{ padding: '9px 10px', color: '#7c3aed', fontWeight: 500 }}>{s.new_contacts}</td>
+                <td style={{ padding: '9px 10px', color: '#3b82f6' }}>{s.emails_fresh}</td>
+                <td style={{ padding: '9px 10px', color: '#10b981' }}>{s.emails_f1}</td>
+                <td style={{ padding: '9px 10px', color: '#059669' }}>{s.emails_f2}</td>
+                <td style={{ padding: '9px 10px', color: '#f59e0b' }}>{s.emails_f3}</td>
+                <td style={{ padding: '9px 10px', color: '#ef4444' }}>{s.emails_f4}</td>
+                <td style={{ padding: '9px 10px', color: '#dc2626' }}>{s.emails_f5}</td>
+                <td style={{ padding: '9px 10px', color: '#6366f1' }}>{s.templated_step1}</td>
+                <td style={{ padding: '9px 10px', color: '#6366f1' }}>{s.templated_step2}</td>
+                <td style={{ padding: '9px 10px', color: '#059669', fontWeight: 500 }}>{s.prospect_responses}</td>
+                <td style={{ padding: '9px 10px', color: '#d97706' }}>{s.warm_responses}</td>
+                <td style={{ padding: '9px 10px', color: '#6b7280' }}>{s.not_interested_responses}</td>
+                <td style={{ padding: '9px 10px', color: '#dc2626' }}>{s.negative_responses}</td>
+                <td style={{ padding: '9px 10px' }}>{s.contacts_ai}</td>
+                <td style={{ padding: '9px 10px' }}>{s.contacts_templated}</td>
+                <td style={{ padding: '9px 10px' }}>{s.total_accounts}</td>
+                <td style={{ padding: '9px 10px', color: '#7c3aed' }}>{s.accounts_added}</td>
+                <td style={{ padding: '9px 10px', color: '#059669' }}>{s.active_accounts}</td>
+                <td style={{ padding: '9px 10px', color: '#9ca3af' }}>{s.inactive_accounts}</td>
+                <td style={{ padding: '9px 10px', color: '#059669', fontWeight: 500 }}>{s.replies}</td>
+                <td style={{ padding: '9px 10px', color: '#7c3aed' }}>{s.meetings}</td>
+                <td style={{ padding: '9px 10px', color: '#16a34a', fontWeight: 500 }}>{s.won}</td>
+                <td style={{ padding: '9px 10px', color: '#dc2626' }}>{s.bounced}</td>
+                <td style={{ padding: '9px 10px' }}>
                   <span style={{ padding: '3px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500,
                     background: s.rate >= 15 ? '#dcfce7' : s.rate >= 8 ? '#fef9c3' : '#fee2e2',
                     color: s.rate >= 15 ? '#15803d' : s.rate >= 8 ? '#854d0e' : '#991b1b' }}>
@@ -152,6 +219,7 @@ export default function DirectorDashboard() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Activity */}
