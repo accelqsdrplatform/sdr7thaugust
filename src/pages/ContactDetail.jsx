@@ -124,6 +124,7 @@ export default function ContactDetail() {
 
   const [timeline, setTimeline] = useState([]);
   const [advancing, setAdvancing] = useState(false);
+  const [respondPending, setRespondPending] = useState(false);
   const [emails, setEmails] = useState([]);
   const [emailsLoading, setEmailsLoading] = useState(false);
 
@@ -218,11 +219,23 @@ export default function ContactDetail() {
     fetchTimeline();
   }
 
-  async function setResponse(response) { if (response === 'bounce') { await markContactBounced(id, user.id); setContact(c => ({ ...c, status: 'bounced', bounced: true, response_state: 'Bounce' })); fetchTimeline(); return; }
-    const val = response || null; const update = { response_type: val }; await supabase.from('activity_log').insert({ actor_id: user.id, contact_id: id, activity_type: 'response_set', details: { response_type: val } });
-    await supabase.from('contacts').update(update).eq('id', id);
-    if (val) await logEmailResponse(id, user.id, val);
-    setContact(c => ({ ...c, response_type: val }));
+  async function setResponse(response) {
+    // Guard against rapid repeat clicks: without this, a user clicking a
+    // response tag more than once before the component re-renders with the
+    // updated contact.response_type reads a stale value on every click and
+    // re-inserts a fresh email_responses row + activity_log entry each time,
+    // producing many duplicate "response" rows for a single real response.
+    if (respondPending) return;
+    setRespondPending(true);
+    try {
+      if (response === 'bounce') { await markContactBounced(id, user.id); setContact(c => ({ ...c, status: 'bounced', bounced: true, response_state: 'Bounce' })); fetchTimeline(); return; }
+      const val = response || null; const update = { response_type: val }; await supabase.from('activity_log').insert({ actor_id: user.id, contact_id: id, activity_type: 'response_set', details: { response_type: val } });
+      await supabase.from('contacts').update(update).eq('id', id);
+      if (val) await logEmailResponse(id, user.id, val);
+      setContact(c => ({ ...c, response_type: val }));
+    } finally {
+      setRespondPending(false);
+    }
   }
 
   async function advanceStage() {
@@ -500,8 +513,9 @@ export default function ContactDetail() {
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {RESPONSE_OPTIONS.map(r => (
-                <button key={r.value} onClick={() => setResponse(contact.response_type === r.value ? null : r.value)}
-                  style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontWeight: 500, transition: 'background 0.15s, color 0.15s, border 0.15s',
+                <button key={r.value} disabled={respondPending} onClick={() => setResponse(contact.response_type === r.value ? null : r.value)}
+                  style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, cursor: respondPending ? 'default' : 'pointer', fontWeight: 500, transition: 'background 0.15s, color 0.15s, border 0.15s',
+                    opacity: respondPending ? 0.6 : 1,
                     background: contact.response_type === r.value ? r.bg : '#f8f8f6',
                     color: contact.response_type === r.value ? r.color : '#888',
                     border: contact.response_type === r.value ? `1.5px solid ${r.color}` : '1.5px solid #e8e8e4' }}>
@@ -509,8 +523,8 @@ export default function ContactDetail() {
                 </button>
               ))}
               {contact.response_type && (
-                <button onClick={() => setResponse(null)}
-                  style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, cursor: 'pointer', background: 'none', border: '1px solid #e8e8e4', color: '#bbb' }}>
+                <button disabled={respondPending} onClick={() => setResponse(null)}
+                  style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, cursor: respondPending ? 'default' : 'pointer', opacity: respondPending ? 0.6 : 1, background: 'none', border: '1px solid #e8e8e4', color: '#bbb' }}>
                   ✕ Clear
                 </button>
               )}
