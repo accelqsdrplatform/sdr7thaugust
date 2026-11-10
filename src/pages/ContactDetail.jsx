@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { inferFromTitle } from '../utils/inferContact'; import { markContactBounced } from '../utils/bounce';
-import { logEmailResponse } from '../utils/emailResponses';
+import { logEmailResponse, clearEmailResponse } from '../utils/emailResponses';
 import { toast } from 'sonner';
 
 const STAGES = ['Fresh','F1','F2','F3','F4','F5'];
@@ -232,6 +232,7 @@ export default function ContactDetail() {
       const val = response || null; const update = { response_type: val }; await supabase.from('activity_log').insert({ actor_id: user.id, contact_id: id, activity_type: 'response_set', details: { response_type: val } });
       await supabase.from('contacts').update(update).eq('id', id);
       if (val) await logEmailResponse(id, user.id, val);
+      else await clearEmailResponse(id);
       setContact(c => ({ ...c, response_type: val }));
     } finally {
       setRespondPending(false);
