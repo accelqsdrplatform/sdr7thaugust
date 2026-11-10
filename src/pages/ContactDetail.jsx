@@ -203,7 +203,12 @@ export default function ContactDetail() {
   async function updateStatus(status) { if (status === 'bounced') { await markContactBounced(id, user.id); setContact(c => ({ ...c, status: 'bounced', bounced: true, response_state: 'Bounce' })); fetchTimeline(); return; }
     const update = { status };
     if (STEP_MAP[status] !== undefined) update.sequence_step = STEP_MAP[status];
-    await supabase.from('contacts').update(update).eq('id', id);
+    const statusUpd = await supabase.from('contacts').update(update).eq('id', id).select('id');
+    if (statusUpd.error || !statusUpd.data || statusUpd.data.length === 0) {
+      console.error('updateStatus: contacts update did not apply', statusUpd.error);
+      toast.error("Could not update this contact's status - you may not have permission to edit it.");
+      return;
+    }
     await supabase.from('activity_log').insert({
       actor_id: user.id, contact_id: id,
       activity_type: 'status_changed', details: { status }
@@ -234,7 +239,18 @@ export default function ContactDetail() {
       last_contacted: new Date().toISOString(),
       next_followup: nextDate.toISOString(),
     };
-    await supabase.from('contacts').update(update).eq('id', id);
+    const stageUpd = await supabase.from('contacts').update(update).eq('id', id).select('id');
+    // If this affected 0 rows (e.g. RLS blocked it because the viewer isn't
+    // the owner and isn't covered by an admin/sub-admin override), stop here
+    // instead of still logging the touch as sent and updating local state as
+    // if it worked - that's what let contacts.status silently drift behind
+    // the real emails table.
+    if (stageUpd.error || !stageUpd.data || stageUpd.data.length === 0) {
+      console.error('advanceStage: contacts update did not apply', stageUpd.error);
+      toast.error("Could not update this contact's stage - you may not have permission to edit it.");
+      setAdvancing(false);
+      return;
+    }
     await supabase.from('activity_log').insert({
       actor_id: user.id, contact_id: id,
       activity_type: 'stage_advanced', details: { from: contact.status, to: next }
