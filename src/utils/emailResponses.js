@@ -17,6 +17,14 @@ export async function logEmailResponse(contactId, ownerId, responseType, respond
       .order('sent_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+    // A contact can only have one *current* response at a time (it mirrors
+    // contacts.response_type, which is itself single-valued), so any prior
+    // email_responses rows for this contact are now superseded. Without this,
+    // changing a contact's response tag (e.g. not_interested -> prospect)
+    // left the old row in place forever, and per-type breakdown stats
+    // (Scorecard/Dashboard/EmailMetricsPanel) would double-count the same
+    // contact under both the old and new response type.
+    await supabase.from('email_responses').delete().eq('contact_id', contactId);
     await supabase.from('email_responses').insert({
       contact_id: contactId,
       email_id: email?.id || null,
@@ -26,5 +34,18 @@ export async function logEmailResponse(contactId, ownerId, responseType, respond
     });
   } catch (e) {
     console.error('logEmailResponse failed', e);
+  }
+}
+
+
+// Companion to logEmailResponse: call when a contact's response is being
+// cleared (set back to null/none) rather than changed to a new value, so the
+// email_responses table doesn't keep a stale row for a response that no
+// longer applies.
+export async function clearEmailResponse(contactId) {
+  try {
+    await supabase.from('email_responses').delete().eq('contact_id', contactId);
+  } catch (e) {
+    console.error('clearEmailResponse failed', e);
   }
 }
