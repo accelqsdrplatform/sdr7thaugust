@@ -22,13 +22,18 @@ export default function DirectorDashboard() {
         return count || 0;
       }
 
-      const [total, contacted, replies, meetings, won, bounced, { data: allHierarchy }, { data: acts }] = await Promise.all([
+      const [total, contacted, replies, meetings, won, bounced, yetToContact, { data: allHierarchy }, { data: acts }] = await Promise.all([
         countContacts(q => q.eq('bounced', false)),
         countContacts(q => q.eq('bounced', false).neq('status', 'Fresh')),
         countContacts(q => q.in('status', ['replied', 'meeting', 'won'])),
         countContacts(q => q.eq('status', 'meeting')),
         countContacts(q => q.eq('status', 'won')),
         countContacts(q => q.eq('bounced', true)),
+        // Yet to Contact == Fresh with no follow-up ever scheduled (never
+        // enrolled) -- same definition EmailMetricsPanel uses for its
+        // pipeline-by-stage card, so "Active contacts" matches what the
+        // org actually has in motion rather than counting untouched leads.
+        countContacts(q => q.eq('bounced', false).eq('status', 'Fresh').is('next_followup', null)),
         supabase.from('org_hierarchy').select('*'),
         supabase.from('activity_log')
           .select('*, contacts(full_name,company), org_hierarchy!actor_id(full_name,role)')
@@ -36,7 +41,7 @@ export default function DirectorDashboard() {
           .limit(20),
       ]);
 
-      setStats({ total, contacted, replies, meetings, won, bounced });
+      setStats({ total: total - yetToContact, contacted, replies, meetings, won, bounced });
       setActivity(acts || []);
 
       // Leaderboard: owners only, ranked by replies -- per-owner stats come
