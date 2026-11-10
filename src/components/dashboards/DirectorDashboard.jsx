@@ -72,7 +72,7 @@ export default function DirectorDashboard() {
     });
     const statsByOwner = Object.fromEntries((statsRows || []).map(r => [r.owner_id, r]));
     const blank = {
-      active: 0, yet_to_contact: 0, replies: 0, meetings: 0, won: 0, bounced: 0,
+      total_contacts: 0, active: 0, yet_to_contact: 0, replies: 0, meetings: 0, won: 0, bounced: 0,
       new_contacts: 0, emails_fresh: 0, emails_f1: 0, emails_f2: 0, emails_f3: 0, emails_f4: 0, emails_f5: 0,
       templated_step1: 0, templated_step2: 0, prospect_responses: 0, warm_responses: 0,
       not_interested_responses: 0, negative_responses: 0, total_responses: 0, activity_count: 0,
@@ -161,14 +161,14 @@ export default function DirectorDashboard() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap' }}>
           <thead>
             <tr style={{ borderBottom: '0.5px solid #f0f0ee' }}>
-              {['#', 'Owner', 'Region', 'Score', 'Active', 'Yet to Contact', 'New', 'Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'Tmpl 1', 'Tmpl 2', 'Prospect', 'Warm', 'Not Int.', 'Negative', 'AI', 'Templated', 'Total Accts', 'Accts Added', 'Active Accts', 'Inactive Accts', 'Replies', 'Meetings', 'Won', 'Bounced', 'Rate'].map(h => (
+              {['#', 'Owner', 'Region', 'Score', 'Total Contacts', 'Active', 'Yet to Contact', 'New', 'Fresh', 'F1', 'F2', 'F3', 'F4', 'F5', 'Tmpl 1', 'Tmpl 2', 'Prospect', 'Warm', 'Not Int.', 'Negative', 'AI', 'Templated', 'Total Accts', 'Accts Added', 'Active Accts', 'Inactive Accts', 'Replies', 'Meetings', 'Won', 'Bounced', 'Rate'].map(h => (
                 <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, color: '#999', fontWeight: 500 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {leaderboard.length === 0 ? (
-              <tr><td colSpan={30} style={{ padding: 24, textAlign: 'center', color: '#aaa' }}>No owners found in org_hierarchy.</td></tr>
+              <tr><td colSpan={31} style={{ padding: 24, textAlign: 'center', color: '#aaa' }}>No owners found in org_hierarchy.</td></tr>
             ) : leaderboard.map((s, i) => (
               <tr key={s.id} style={{ borderBottom: '0.5px solid #f5f5f3', background: i === 0 ? '#fffbeb' : 'transparent' }}>
                 <td style={{ padding: '9px 10px', fontWeight: 600, color: i === 0 ? '#d97706' : '#999' }}>
@@ -183,6 +183,7 @@ export default function DirectorDashboard() {
                     {s.score}
                   </span>
                 </td>
+                <td style={{ padding: '9px 10px', color: '#444' }}>{s.total_contacts}</td>
                 <td style={{ padding: '9px 10px' }}>{s.active}</td>
                 <td style={{ padding: '9px 10px', color: '#888' }}>{s.yet_to_contact}</td>
                 <td style={{ padding: '9px 10px', color: '#7c3aed', fontWeight: 500 }}>{s.new_contacts}</td>
