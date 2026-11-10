@@ -430,16 +430,52 @@ export default function FollowUps() {
     const isLast = ta.current_step >= steps.length;
     const now = new Date().toISOString();
     const currentStepObj = steps.find(s=>s.step_number===ta.current_step);
+    // Template steps map 1:1 onto the Fresh..F5 stage sequence (step 1 =
+    // Fresh, step 2 = F1, step 3 = F2, ...). current_step used to only live
+    // on template_assignments, never on contacts.status/sequence_step, so a
+    // templated-track contact's stage badge and the Follow-up Queue's stage
+    // filter kept showing it one stage behind its real progress (e.g. stuck
+    // on "F1" after its F2-equivalent step had already gone out). Keep both
+    // in sync here so contacts.status always reflects the step just reached.
+    const stageForStep = n => ALL_STAGES[Math.min(Math.max(n-1,0), ALL_STAGES.length-1)];
     if(isLast){
-      await supabase.from('template_assignments').update({status:'completed', completed_at:now}).eq('id', ta.id);
-      await supabase.from('contacts').update({last_contacted:now, last_touchpoint_date:now, next_followup:null}).eq('id', contact.id);
+      const taUpd = await supabase.from('template_assignments').update({status:'completed', completed_at:now}).eq('id', ta.id).select('id');
+      if(taUpd.error || !taUpd.data || taUpd.data.length===0){
+        console.error('markSentTemplate: template_assignments update did not apply', taUpd.error);
+        toast.error("Could not update this contact's template progress - you may not have permission to edit it.");
+        setMarkingSent(null);
+        return;
+      }
+      const contactUpd = await supabase.from('contacts').update({status:'cooling_off', last_contacted:now, last_touchpoint_date:now, next_followup:null}).eq('id', contact.id).select('id');
+      if(contactUpd.error || !contactUpd.data || contactUpd.data.length===0){
+        console.error('markSentTemplate: contacts update did not apply', contactUpd.error);
+        toast.error("Could not update this contact's stage - you may not have permission to edit it.");
+        setMarkingSent(null);
+        return;
+      }
     } else {
       const nextStepNum = ta.current_step+1;
       const nextStepObj = steps.find(s=>s.step_number===nextStepNum);
       const delay = nextStepObj?.delay_days ?? 3;
       const nextDue = new Date(); nextDue.setDate(nextDue.getDate()+delay); skipWeekend(nextDue);
-      await supabase.from('template_assignments').update({current_step: nextStepNum}).eq('id', ta.id);
-      await supabase.from('contacts').update({last_contacted:now, last_touchpoint_date:now, next_followup:nextDue.toISOString()}).eq('id', contact.id);
+      const taUpd = await supabase.from('template_assignments').update({current_step: nextStepNum}).eq('id', ta.id).select('id');
+      if(taUpd.error || !taUpd.data || taUpd.data.length===0){
+        console.error('markSentTemplate: template_assignments update did not apply', taUpd.error);
+        toast.error("Could not update this contact's template progress - you may not have permission to edit it.");
+        setMarkingSent(null);
+        return;
+      }
+      const nextStage = stageForStep(nextStepNum);
+      const contactUpd = await supabase.from('contacts').update({
+        status: nextStage, sequence_step: ALL_STAGES.indexOf(nextStage),
+        last_contacted:now, last_touchpoint_date:now, next_followup:nextDue.toISOString(),
+      }).eq('id', contact.id).select('id');
+      if(contactUpd.error || !contactUpd.data || contactUpd.data.length===0){
+        console.error('markSentTemplate: contacts update did not apply', contactUpd.error);
+        toast.error("Could not update this contact's stage - you may not have permission to edit it.");
+        setMarkingSent(null);
+        return;
+      }
     }
     const account=accounts[contact.account_id]||{};
     await supabase.from('activity_log').insert({
