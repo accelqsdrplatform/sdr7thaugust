@@ -49,7 +49,7 @@ export default function DirectorDashboard() {
       // Leaderboard: owners only, ranked by replies -- per-owner stats come
       // from the team_stats_by_owner RPC (server-side aggregation) rather
       // than filtering a full contacts pull, for the same scale reason.
-      const sdrs = (allHierarchy || []).filter(h => h.role === 'owner');
+      const sdrs = (allHierarchy || []).filter(h => h.role === 'owner' || h.role === 'sub-admin');
 
       // Team view picker (Email activity panel): everyone, not just owners --
       // sub-admins also own and work contacts, and were previously missing
