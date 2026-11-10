@@ -24,7 +24,7 @@ export default function DirectorDashboard() {
 
       const [total, contacted, replies, meetings, won, bounced, { data: allHierarchy }, { data: acts }] = await Promise.all([
         countContacts(q => q.eq('bounced', false)),
-        countContacts(q => q.eq('bounced', false).neq('status', 'fresh')),
+        countContacts(q => q.eq('bounced', false).neq('status', 'Fresh')),
         countContacts(q => q.in('status', ['replied', 'meeting', 'won'])),
         countContacts(q => q.eq('status', 'meeting')),
         countContacts(q => q.eq('status', 'won')),
