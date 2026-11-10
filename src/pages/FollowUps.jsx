@@ -356,10 +356,20 @@ export default function FollowUps() {
     const now=new Date().toISOString();
     const daysToNext=(cadence[contact.status]??3);
     const nextDue=new Date(); nextDue.setDate(nextDue.getDate()+daysToNext); skipWeekend(nextDue);
-    await supabase.from('contacts').update({
+    const stageUpd=await supabase.from('contacts').update({
       status:next, sequence_step: ALL_STAGES.includes(next) ? ALL_STAGES.indexOf(next) : ALL_STAGES.length,
       last_contacted:now, last_touchpoint_date:now, next_followup:nextDue.toISOString(),
-    }).eq('id',contact.id);
+    }).eq('id',contact.id).select('id');
+    // If this affected 0 rows (e.g. RLS blocked it - a sub-admin viewing a
+    // teammate's contact via "View all" isn't covered by the contacts UPDATE
+    // policy the way SELECT is), stop here instead of still logging the
+    // email as sent. Silently continuing past a no-op update is what let
+    // contacts.status drift behind the real emails table for ~500 contacts.
+    if(stageUpd.error || !stageUpd.data || stageUpd.data.length===0){
+      console.error('markSentCore: contacts update did not apply', stageUpd.error);
+      toast.error("Could not update this contact's stage - you may not have permission to edit it. The email was not logged as sent.");
+      return;
+    }
     // mark campaign active; if F5 sent mark complete
     const cls=contactListMap[contact.id]||[];
     for(const cl of cls){
