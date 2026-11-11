@@ -175,7 +175,7 @@ export default function FollowUps() {
     localStorage.setItem('sdr_writing_style_id', id);
   }
 
-  // Soft warning only — the platform can't block sending (it happens in the
+  // Soft warning only â the platform can't block sending (it happens in the
   // rep's own mail client), so this just flags mailboxes that have already
   // hit their configured daily cap based on today's logged outbound emails.
   async function loadCapWarnings(contactRows) {
@@ -273,7 +273,7 @@ export default function FollowUps() {
       clMap[cl.contact_id].push({list_id:cl.list_id,is_active_campaign:cl.is_active_campaign});
     });
     setContactListMap(clMap);
-    // Active template assignments for templated-track contacts in this queue —
+    // Active template assignments for templated-track contacts in this queue â
     // drives the "Step X of N" display and Mark Sent advancing the step.
     const templatedIds = (rows||[]).filter(c=>c.track==='templated').map(c=>c.id);
     const { data: taRows } = templatedIds.length > 0
@@ -345,7 +345,7 @@ export default function FollowUps() {
   }
 
   // Core of markSent, shared by the single-contact button and the bulk action
-  // below — does the DB writes for one contact without the loading-state
+  // below â does the DB writes for one contact without the loading-state
   // flicker or full-queue refetch, so bulk calls can batch those once.
   async function markSentCore(contact){
     const next=contact.status==='F5'?'cooling_off':NEXT_STAGE[contact.status]; if(!next) return;
@@ -391,6 +391,11 @@ export default function FollowUps() {
       source_type:emailSource.source_type, source_id:emailSource.source_id,
     });
     setDrafts(d=>{const nd={...d};delete nd[contact.id];return nd;});
+    // The per-email custom instruction textarea is meant for this one send,
+    // not every future stage for this contact -- clear it now so F3/F4/F5
+    // don't silently inherit an instruction typed for F2 (or whichever
+    // stage this was).
+    setCustomPrompts(p=>{const np={...p};delete np[contact.id];return np;});
     setDraftOpen(o=>o===contact.id?null:o);
   }
 
@@ -410,7 +415,7 @@ export default function FollowUps() {
     fetchData();
   }
 
-  // Templated-track contacts never run the F1-F5/axis model at all — Mark Sent
+  // Templated-track contacts never run the F1-F5/axis model at all â Mark Sent
   // here just advances template_assignments.current_step (or completes the
   // assignment on the last step) instead of touching contacts.status.
   function applyMergeFields(str, c, account){
@@ -509,10 +514,10 @@ export default function FollowUps() {
     setMarkingSent(contact.id);
     const now = new Date().toISOString();
     // Cancel unconditionally by contact_id/status rather than relying on the
-    // locally-cached `ta` — if it wasn't loaded yet, the old code silently
+    // locally-cached `ta` â if it wasn't loaded yet, the old code silently
     // skipped the cancel, leaving a zombie "active" assignment behind.
     // The DB's template_assignments_status_check constraint only allows
-    // 'active' or 'completed' — there is no 'cancelled' status. Using
+    // 'active' or 'completed' â there is no 'cancelled' status. Using
     // 'cancelled' here (as the old code did) always silently failed this
     // check constraint, which is why switched-away contacts kept an
     // orphaned "active" assignment forever.
@@ -534,7 +539,7 @@ export default function FollowUps() {
   }
 
   async function bulkGenerateDrafts(){
-    // Templated-track contacts don't use AI drafts at all — their content is
+    // Templated-track contacts don't use AI drafts at all â their content is
     // the canned template_assignments step, shown via "View Step". Routing
     // them through doGenerate() here used to silently AI-generate and
     // overwrite that, which is wrong for a templated contact.
@@ -555,7 +560,7 @@ export default function FollowUps() {
     setBulkMarking(true);
     for(const c of list){
       // Templated-track contacts must advance template_assignments.current_step
-      // (markSentTemplate), not contacts.status via the AI-track markSentCore —
+      // (markSentTemplate), not contacts.status via the AI-track markSentCore â
       // using markSentCore here desyncs status from current_step and leaves the
       // Queue/CSV showing the wrong step's content.
       if(c.track==='templated'){
@@ -637,7 +642,7 @@ export default function FollowUps() {
   }
   function clearSelection(){ setSelectedIds(new Set()); }
   // Resolves the bulk picker's choice against the queue as currently
-  // filtered (filteredFresh + filteredActive are already in memory — this
+  // filtered (filteredFresh + filteredActive are already in memory â this
   // page has no server pagination, so there's no separate "all matching"
   // fetch needed like Contacts.jsx).
   function applyBulkSelection(choice){
@@ -688,7 +693,7 @@ export default function FollowUps() {
                 </button>
               )}
             </div>
-            <p style={{fontSize:12,color:'#6b7280',margin:'2px 0 0'}}>Fresh to F5 — draft, review, mark sent</p>
+            <p style={{fontSize:12,color:'#6b7280',margin:'2px 0 0'}}>Fresh to F5 â draft, review, mark sent</p>
           </div>
           <div style={{flex:1}}/>
           <div style={{display:'flex',gap:7,alignItems:'center'}}>
@@ -699,7 +704,7 @@ export default function FollowUps() {
             {staleCt>0&&<div onClick={()=>setStaleOnly(v=>!v)}
               style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:700,color:'#b45309',cursor:'pointer',
                 background:staleOnly?'#fef3c7':'#fffbeb',border:`1.5px solid ${staleOnly?'#d97706':'#fde68a'}`}}>
-              ⚠ {staleCt} going cold</div>}
+              â  {staleCt} going cold</div>}
             {todayCt>0&&<div onClick={()=>setTimingFilter(f=>f==='today'?'all':'today')}
               style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:700,color:'#059669',cursor:'pointer',
                 background:timingFilter==='today'?'#d1fae5':'#f0fdf4',border:`1.5px solid ${timingFilter==='today'?'#059669':'#6ee7b7'}`}}>
@@ -709,7 +714,7 @@ export default function FollowUps() {
             {capWarnings.map(w => (
               <div key={w.email} title={`${w.email} has sent ${w.sentToday}/${w.cap} today`}
                 style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:700,color:'#b45309',background:'#fffbeb',border:'1.5px solid #fcd34d'}}>
-                ⚠ {w.email} at cap
+                â  {w.email} at cap
               </div>
             ))}
             {freshContacts.length>0&&<div onClick={()=>setStageFilter(f=>f==='Fresh'?'all':'Fresh')}
@@ -722,7 +727,7 @@ export default function FollowUps() {
           <div style={{position:'relative',marginRight:6}}>
             <button onClick={()=>setBulkPickerOpen(o=>!o)}
               style={{padding:'6px 12px',borderRadius:8,border:'1.5px solid #e5e7eb',background:'#fff',color:'#374151',fontSize:12,fontWeight:600,cursor:'pointer'}}>
-              Select... ▾
+              Select... â¾
             </button>
             {bulkPickerOpen&&(
               <div style={{position:'absolute',top:'100%',right:0,zIndex:50,marginTop:4}}>
@@ -737,21 +742,21 @@ export default function FollowUps() {
           </div>
           {selectedIds.size>0&&(
             <>
-              <button onClick={clearSelection} style={{padding:'6px 10px',borderRadius:8,border:'1.5px solid #d1d5db',background:'#fff',color:'#6b7280',fontSize:12,fontWeight:600,cursor:'pointer',marginRight:6}}>{selectedIds.size} selected ✕</button>
+              <button onClick={clearSelection} style={{padding:'6px 10px',borderRadius:8,border:'1.5px solid #d1d5db',background:'#fff',color:'#6b7280',fontSize:12,fontWeight:600,cursor:'pointer',marginRight:6}}>{selectedIds.size} selected â</button>
               <button onClick={bulkGenerateDrafts} disabled={bulkGenerating||bulkMarking}
                 style={{padding:'6px 14px',borderRadius:8,border:'1.5px solid #e5e7eb',background:'#fff',color:'#1d4ed8',fontSize:12,fontWeight:600,cursor:(bulkGenerating||bulkMarking)?'not-allowed':'pointer',opacity:(bulkGenerating||bulkMarking)?0.6:1,marginRight:6}}>
-                {bulkGenerating?'Generating…':`✨ Generate Drafts (${selectedIds.size})`}
+                {bulkGenerating?'Generatingâ¦':`â¨ Generate Drafts (${selectedIds.size})`}
               </button>
               <button onClick={bulkMarkSent} disabled={bulkGenerating||bulkMarking}
                 style={{padding:'6px 14px',borderRadius:8,border:'none',background:'#2563eb',color:'#fff',fontSize:12,fontWeight:600,cursor:(bulkGenerating||bulkMarking)?'not-allowed':'pointer',opacity:(bulkGenerating||bulkMarking)?0.6:1,marginRight:6}}>
-                {bulkMarking?'Marking…':`Mark Sent (${selectedIds.size})`}
+                {bulkMarking?'Markingâ¦':`Mark Sent (${selectedIds.size})`}
               </button>
             </>
           )}
-          <button onClick={exportQueueCSV} style={{padding:'6px 14px',borderRadius:8,border:'1.5px solid #e5e7eb',background:'#fff',color:'#2563eb',fontSize:12,fontWeight:600,cursor:'pointer',marginRight:6}}>{'↓ CSV'+(selectedIds.size>0?' ('+selectedIds.size+')':'')}</button><button onClick={()=>setSettingsOpen(s=>!s)}
+          <button onClick={exportQueueCSV} style={{padding:'6px 14px',borderRadius:8,border:'1.5px solid #e5e7eb',background:'#fff',color:'#2563eb',fontSize:12,fontWeight:600,cursor:'pointer',marginRight:6}}>{'â CSV'+(selectedIds.size>0?' ('+selectedIds.size+')':'')}</button><button onClick={()=>setSettingsOpen(s=>!s)}
             style={{padding:'6px 14px',borderRadius:8,border:`1.5px solid ${settingsOpen?'#2563eb':'#e5e7eb'}`,
               background:settingsOpen?'#dbeafe':'#fff',color:settingsOpen?'#1d4ed8':'#374151',fontSize:12,fontWeight:600,cursor:'pointer'}}>
-            Settings {settingsOpen?'▲':'▼'}
+            Settings {settingsOpen?'â²':'â¼'}
           </button>
         </div>
 
@@ -873,13 +878,13 @@ export default function FollowUps() {
           <div style={{textAlign:'center',padding:'80px 20px',color:'#9ca3af'}}>Loading queue...</div>
         ):totalInQueue===0?(
           <div style={{textAlign:'center',padding:'80px 20px'}}>
-            <div style={{fontSize:44,marginBottom:14}}>🎉</div>
+            <div style={{fontSize:44,marginBottom:14}}>ð</div>
             <div style={{fontSize:16,fontWeight:700,color:'#374151'}}>Queue is empty!</div>
             <div style={{fontSize:13,color:'#6b7280',marginTop:6}}>Go to Accounts and click Start on a contact to begin outreach</div>
           </div>
         ):noResults?(
           <div style={{textAlign:'center',padding:'80px 20px'}}>
-            <div style={{fontSize:32,marginBottom:10}}>🔍</div>
+            <div style={{fontSize:32,marginBottom:10}}>ð</div>
             <div style={{fontSize:14,fontWeight:600,color:'#374151'}}>No matches</div>
             <button onClick={clearFilters} style={{marginTop:14,padding:'8px 18px',background:'#2563eb',color:'#fff',borderRadius:8,border:'none',fontSize:13,cursor:'pointer',fontWeight:600}}>Clear filters</button>
           </div>
@@ -904,10 +909,10 @@ function FreshSection({contacts,...props}){
     <div style={{marginBottom:28}}>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
         <span style={{fontSize:12,fontWeight:700,color:'#1d4ed8',padding:'3px 14px',background:'#dbeafe',borderRadius:20,flexShrink:0}}>
-          New Contacts · {contacts.length}
+          New Contacts Â· {contacts.length}
         </span>
         <div style={{flex:1,height:1,background:'#e5e7eb'}}/>
-        <span style={{fontSize:11,color:'#6b7280',flexShrink:0}}>Draft initial email → Mark Sent → moves to F1</span>
+        <span style={{fontSize:11,color:'#6b7280',flexShrink:0}}>Draft initial email â Mark Sent â moves to F1</span>
         {readyItems.length>0&&<span style={{fontSize:11,fontWeight:600,color:'#7c3aed',padding:'2px 9px',background:'#f5f3ff',borderRadius:12,border:'1px solid #ede9fe',flexShrink:0}}>{readyItems.length} ready</span>}
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:7}}>
@@ -924,7 +929,7 @@ function TimingGroup({group,...props}){
     <div style={{marginBottom:28}}>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
         <span style={{fontSize:12,fontWeight:700,color:group.color,padding:'3px 14px',background:group.color+'18',borderRadius:20,flexShrink:0}}>
-          {group.label} · {group.items.length}
+          {group.label} Â· {group.items.length}
         </span>
         <div style={{flex:1,height:1,background:'#e5e7eb'}}/>
         {readyItems.length>0&&<span style={{fontSize:11,fontWeight:600,color:'#7c3aed',padding:'2px 9px',background:'#f5f3ff',borderRadius:12,border:'1px solid #ede9fe',flexShrink:0}}>{readyItems.length} ready</span>}
@@ -968,7 +973,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
   const hasActiveCampaign=contactLists.some(cl=>cl.is_active_campaign);
   const listNames=contactLists.map(cl=>(lists||[]).find(l=>l.id===cl.list_id)?.name).filter(Boolean);
   const lastTouch=c.last_touchpoint_date||c.last_contacted||(sentHistory&&sentHistory[0]&&sentHistory[0].date);
-  const markSentLabel=c.status==='Fresh'?'Send → F1':c.status==='F5'?'Send → Cooling off':'Mark Sent';
+  const markSentLabel=c.status==='Fresh'?'Send â F1':c.status==='F5'?'Send â Cooling off':'Mark Sent';
   const draftBtnLabel=isDrafting?'Drafting...':hasDraft?(isDraftOpen?'Hide Draft':'Show Draft'):c.status==='Fresh'?'Draft Initial Email':'Draft Email';
   const isTemplated=c.track==='templated';
   const ta=templateAssignments?.[c.id];
@@ -1013,7 +1018,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
             {((c.first_name||'')+' '+(c.last_name||'')).trim()}
           </div>
           <div style={{fontSize:11,color:'#6b7280',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-            {c.title?`${c.title} · `:''}{c.company||'—'}
+            {c.title?`${c.title} Â· `:''}{c.company||'â'}
           </div>
         </div>
         {isTemplated?(
@@ -1022,7 +1027,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
               Templated
               <button onClick={e=>{e.stopPropagation();onSwitchToAI(c);}} title="Switch to AI-personalized outreach"
                 style={{fontSize:9,fontWeight:700,padding:'1px 4px',borderRadius:4,border:'1px solid #c4b5fd',background:'#fff',color:'#6d28d9',cursor:'pointer',lineHeight:1.4}}>
-                ↻ AI
+                â» AI
               </button>
             </span>
             <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:6,background:taComplete?'#dcfce7':'#f1f5f9',color:taComplete?'#15803d':'#475569',flexShrink:0,whiteSpace:'nowrap'}}>{taComplete?'Sequence Complete':`Step ${taCurrentStep} of ${taTotal}`}</span>
@@ -1043,7 +1048,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
           <span style={{fontSize:10,padding:'2px 8px',borderRadius:12,background:'#eff6ff',color:'#2563eb',
             fontWeight:600,flexShrink:0,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
             title={listNames.join(', ')}>
-            {hasActiveCampaign?'🟢 ':''}{listNames[0]}{listNames.length>1?` +${listNames.length-1}`:''}
+            {hasActiveCampaign?'ð¢ ':''}{listNames[0]}{listNames.length>1?` +${listNames.length-1}`:''}
           </span>
         )}
         {account&&<span style={{fontSize:11,color:'#6b7280',flexShrink:0,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{account.name}</span>}
@@ -1055,7 +1060,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
           </div>
         )}
         <div style={{fontSize:11,fontWeight:600,flexShrink:0,width:72,textAlign:'right',color:isOverdue?'#dc2626':c._due?'#374151':'#d1d5db'}}>
-          {isOverdue&&'⚠ '}{formatDue(c._due)}
+          {isOverdue&&'â  '}{formatDue(c._due)}
         </div>
         <div style={{display:'flex',gap:5,flexShrink:0,alignItems:'center'}}>
           {isTemplated?(
@@ -1068,7 +1073,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
               {!taComplete&&<button onClick={()=>onMarkSentTemplate(c)} disabled={isMarking}
                 style={{padding:'5px 11px',borderRadius:7,fontSize:11,fontWeight:700,border:'none',
                   background:isMarking?'#d1fae5':'#059669',color:'#fff',cursor:isMarking?'wait':'pointer'}}>
-                {isMarking?'Done!':(taCurrentStep>=taTotal?'Send → Complete':'Mark Sent')}
+                {isMarking?'Done!':(taCurrentStep>=taTotal?'Send â Complete':'Mark Sent')}
               </button>}
             </>
           ):(
@@ -1094,7 +1099,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
           </select>
           <button onClick={()=>onView(c.id)}
             style={{padding:'5px 9px',borderRadius:7,fontSize:11,fontWeight:600,border:'1px solid #e5e7eb',background:'#fff',color:'#6b7280',cursor:'pointer'}}>
-            →
+            â
           </button>
         </div>
       </div>
@@ -1103,9 +1108,9 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
       {isDraftOpen&&isTemplated&&(
         <div style={{borderTop:'1px solid #ede9fe',background:'#fdf8ff',padding:'14px 16px'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-            <div style={{fontSize:12,fontWeight:700,color:'#374151',flex:1}}>Templated — {taComplete?'Sequence Complete':`Step ${taCurrentStep} of ${taTotal}`}</div>
+            <div style={{fontSize:12,fontWeight:700,color:'#374151',flex:1}}>Templated â {taComplete?'Sequence Complete':`Step ${taCurrentStep} of ${taTotal}`}</div>
             <button onClick={()=>onCopy(c.id)} style={{fontSize:11,padding:'3px 12px',borderRadius:6,border:'none',background:isCopied?'#059669':'#6d28d9',color:'#fff',cursor:'pointer',fontWeight:600}}>{isCopied?'Copied!':'Copy'}</button>
-            {!taComplete&&<button onClick={()=>onMarkSentTemplate(c)} disabled={isMarking} style={{fontSize:11,padding:'3px 12px',borderRadius:6,border:'none',background:isMarking?'#6ee7b7':'#059669',color:'#fff',cursor:isMarking?'wait':'pointer',fontWeight:700}}>{isMarking?'Done!':(taCurrentStep>=taTotal?'Send → Complete':'Mark Sent')}</button>}
+            {!taComplete&&<button onClick={()=>onMarkSentTemplate(c)} disabled={isMarking} style={{fontSize:11,padding:'3px 12px',borderRadius:6,border:'none',background:isMarking?'#6ee7b7':'#059669',color:'#fff',cursor:isMarking?'wait':'pointer',fontWeight:700}}>{isMarking?'Done!':(taCurrentStep>=taTotal?'Send â Complete':'Mark Sent')}</button>}
           </div>
           {taStepObj?(
             <>
@@ -1140,7 +1145,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
                     background:'#faf5ff',color:'#374151',resize:'vertical',fontFamily:'inherit',outline:'none',boxSizing:'border-box',lineHeight:1.5}}/>
               </div>
               <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-                <div style={{fontSize:12,fontWeight:700,color:'#374151',flex:1}}>AI Draft — {c.status==='Fresh'?'Initial Email':sm.label}</div>
+                <div style={{fontSize:12,fontWeight:700,color:'#374151',flex:1}}>AI Draft â {c.status==='Fresh'?'Initial Email':sm.label}</div>
                 {(draft.strategy||draft.factsAsserted?.length>0||draft.hookUsed)&&(
                   <button onClick={()=>setStrategyOpen(s=>({...s,[c.id]:!s[c.id]}))}
                     title="View email strategy"
@@ -1211,7 +1216,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
                     <div key={label} style={{marginBottom:8}}>
                       <span style={{fontWeight:700,color:'#374151'}}>{label}:</span>{' '}
                       <span style={{color:'#6d28d9',fontWeight:600}}>{name}</span>
-                      {reason&&<span style={{color:'#6b7280'}}> — {reason}</span>}
+                      {reason&&<span style={{color:'#6b7280'}}> â {reason}</span>}
                     </div>
                   ))}
                   {draft.strategy.psychTechniques?.length>0&&(
@@ -1251,7 +1256,7 @@ function ContactRow({contact:c,accounts,drafts,drafting,draftOpen,copied,marking
                   ))}
                 </div>
               )}
-              <div style={{marginTop:10,fontSize:11,color:'#9ca3af'}}>Review and personalise before sending · click <strong style={{color:'#059669'}}>{markSentLabel}</strong> after you send it</div>
+              <div style={{marginTop:10,fontSize:11,color:'#9ca3af'}}>Review and personalise before sending Â· click <strong style={{color:'#059669'}}>{markSentLabel}</strong> after you send it</div>
             </>
           ):(
             <div style={{padding:'8px 0 4px'}}>
