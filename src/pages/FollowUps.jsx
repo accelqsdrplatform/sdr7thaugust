@@ -218,6 +218,7 @@ export default function FollowUps() {
     if (!viewAll||!canViewAll) cQuery=cQuery.eq('owner_id',user.id);
     cQuery=cQuery
       .or('status.in.(F1,F2,F3,F4,F5),and(status.eq.Fresh,next_followup.not.is.null)')
+      .or('bounced.is.null,bounced.eq.false')
       .order('last_contacted',{ascending:false,nullsFirst:false})
       .limit(QUEUE_LIMIT);
     let aQuery = supabase.from('accounts').select('id,name,industry,research,testing_tools,enterprise_apps,saas_apps,employee_count,revenue_millions').limit(QUEUE_LIMIT);
@@ -232,7 +233,7 @@ export default function FollowUps() {
     if (cRes.error||!rows) {
       let fb=supabase.from('contacts').select('*');
       if (!viewAll||!canViewAll) fb=fb.eq('owner_id',user.id);
-      const fbRes=await fb.in('status',ALL_STAGES).order('last_contacted',{ascending:false,nullsFirst:false}).limit(QUEUE_LIMIT);
+      const fbRes=await fb.in('status',ALL_STAGES).or('bounced.is.null,bounced.eq.false').order('last_contacted',{ascending:false,nullsFirst:false}).limit(QUEUE_LIMIT);
       rows=(fbRes.data||[]).filter(c=>c.status!=='Fresh'||(c.status==='Fresh'&&c.next_followup));
     }
     setContacts(rows||[]);
