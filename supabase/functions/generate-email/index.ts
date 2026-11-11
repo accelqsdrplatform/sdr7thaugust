@@ -526,6 +526,12 @@ ${(customWritingRules && customWritingRules.trim()) ? customWritingRules.trim() 
 `
 
     // ---- custom instructions (SDR override, if provided) ----
+    const customWordMatch = customPrompt?.match(/(\d+)\s*words?/i)
+    const customWordLimit = customWordMatch ? parseInt(customWordMatch[1], 10) : null
+    const effectiveWordLimit = customPrompt?.trim()
+      ? (customWordLimit ? customWordLimit + 5 : (STAGE_WORD_LIMITS[stageKey] || 999) + 40)
+      : (STAGE_WORD_LIMITS[stageKey] || 999)
+
     const customInstructions = customPrompt?.trim()
       ? `========================================
 SDR CUSTOM INSTRUCTIONS - follow these exactly, they override everything else
@@ -533,11 +539,10 @@ SDR CUSTOM INSTRUCTIONS - follow these exactly, they override everything else
 ${customPrompt.trim()}
 
 This content MUST appear in the final body -- it is never optional and must
-never be the part that gets cut for length. The stage word cap above still
-applies to the email as a whole, so shorten or drop other parts of the body
-(not this instruction) if needed to make room. This draft is exempt from the
-automatic word-cap truncation that normally runs after generation, so you are
-fully responsible for the final length yourself.
+never be the part that gets cut for length. Shorten or drop other parts of
+the body (not this instruction) if needed to make room. The final body will
+be truncated to ${effectiveWordLimit} words if it runs long, so write it to
+comfortably fit within that length yourself.
 `
       : ''
 
@@ -667,9 +672,7 @@ Return ONLY valid JSON:
 
     return new Response(JSON.stringify({
       subject: cleanSubject(parsed.subject),
-      body: customPrompt?.trim()
-        ? stripSignoff(clean(parsed.body))
-        : enforceWordLimit(stripSignoff(clean(parsed.body)), STAGE_WORD_LIMITS[stageKey] || 999),
+      body: enforceWordLimit(stripSignoff(clean(parsed.body)), effectiveWordLimit),
       hook_used: parsed.hook_used || null,
       facts_asserted: Array.isArray(parsed.facts_asserted) ? parsed.facts_asserted : [],
       unverified: Array.isArray(parsed.unverified) ? parsed.unverified : [],
