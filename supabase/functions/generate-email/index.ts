@@ -604,6 +604,7 @@ Return ONLY valid JSON:
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 900,
+        temperature: 0.3,
         messages: [{ role: 'user', content: prompt }]
       })
     })
@@ -624,7 +625,7 @@ Return ONLY valid JSON:
     const fixBrand = (s: string) => (s || '').replace(/\bA+C*ELQ\b/gi, 'ACCELQ')
 
     const clean = (s: string) => fixBrand(s || '')
-      .replace(/\s*[ââ]\s*/g, ', ')
+      .replace(/\s*[Ã¢ÂÂÃ¢ÂÂ]\s*/g, ', ')
       .replace(/  +/g, ' ')
       .trim()
 
