@@ -543,6 +543,13 @@ never be the part that gets cut for length. Shorten or drop other parts of
 the body (not this instruction) if needed to make room. The final body will
 be truncated to ${effectiveWordLimit} words if it runs long, so write it to
 comfortably fit within that length yourself.
+
+Any date, number, or ask you write here to satisfy this instruction belongs
+to you, the SDR -- it is not a claim about the company. The later check that
+says to cut any timeframe, number or outcome not found in the FACT LEDGER or
+VERIFIED PROOF applies only to claims about the prospect or their company; it
+never applies to this section, and is never a reason to cut or soften
+anything written here.
 `
       : ''
 
@@ -617,7 +624,7 @@ Return ONLY valid JSON:
     const fixBrand = (s: string) => (s || '').replace(/\bA+C*ELQ\b/gi, 'ACCELQ')
 
     const clean = (s: string) => fixBrand(s || '')
-      .replace(/\s*[—–]\s*/g, ', ')
+      .replace(/\s*[ââ]\s*/g, ', ')
       .replace(/  +/g, ' ')
       .trim()
 
