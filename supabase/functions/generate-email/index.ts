@@ -309,12 +309,12 @@ serve(async (req) => {
   }
 
   try {
-    const { action, contact, stage, accountResearch, accountNote, priorEmails, customPrompt, customWritingRules } = await req.json()
+    const { action, contact, stage, accountResearch, accountNote, priorEmails, customPrompt, customWritingRules, customStageConfig } = await req.json()
 
     // Settings > My Writing Prompts calls this to show the real current default
     // text, pre-filled, before a rep writes their own version -- no AI call needed.
     if (action === 'get_default_writing_rules') {
-      return new Response(JSON.stringify({ writingRulesBlock: DEFAULT_WRITING_RULES }), {
+      return new Response(JSON.stringify({ writingRulesBlock: DEFAULT_WRITING_RULES, stageSpecByStage: STAGE_SPEC }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
@@ -437,7 +437,11 @@ quantification.
     const accountUnderstandingBlock = ''
 
     // ---- 6. Stage ----
-    const stageBlock = `========================================
+    const hasStageConfig = !!(customStageConfig && customStageConfig.prompt_text && String(customStageConfig.prompt_text).trim())
+
+    const stageBlock = hasStageConfig
+      ? `========================================\nTHIS EMAIL: ${stageKey} -- SDR's own rules for this stage\n========================================\n${(customStageConfig.tone && String(customStageConfig.tone).trim()) ? `TONE: ${String(customStageConfig.tone).trim()}\n\n` : ''}${String(customStageConfig.prompt_text).trim()}\n`
+      : `========================================
 THIS EMAIL: ${stageKey} - axis: ${axis.name}
 ========================================
 ${axis.text}
@@ -519,7 +523,9 @@ Hard constraints:
     }
 
     // ---- 12. Writing rules ----
-    const writingRulesBlock = `========================================
+    const writingRulesBlock = hasStageConfig
+      ? '' // the SDR's own per-stage rules above already cover tone/style/structure -- no house writing rules layered on top
+      : `========================================
 WRITING RULES
 ========================================
 ${(customWritingRules && customWritingRules.trim()) ? customWritingRules.trim() : DEFAULT_WRITING_RULES}
@@ -528,9 +534,10 @@ ${(customWritingRules && customWritingRules.trim()) ? customWritingRules.trim() 
     // ---- custom instructions (SDR override, if provided) ----
     const customWordMatch = customPrompt?.match(/(\d+)\s*words?/i)
     const customWordLimit = customWordMatch ? parseInt(customWordMatch[1], 10) : null
+    const stageWordCount = hasStageConfig && Number(customStageConfig.word_count) > 0 ? Number(customStageConfig.word_count) : null
     const effectiveWordLimit = customPrompt?.trim()
-      ? (customWordLimit ? customWordLimit + 5 : (STAGE_WORD_LIMITS[stageKey] || 999) + 40)
-      : (STAGE_WORD_LIMITS[stageKey] || 999)
+      ? (customWordLimit ? customWordLimit + 5 : (stageWordCount || STAGE_WORD_LIMITS[stageKey] || 999) + 40)
+      : (stageWordCount || STAGE_WORD_LIMITS[stageKey] || 999)
 
     const customInstructions = customPrompt?.trim()
       ? `========================================
@@ -625,7 +632,7 @@ Return ONLY valid JSON:
     const fixBrand = (s: string) => (s || '').replace(/\bA+C*ELQ\b/gi, 'ACCELQ')
 
     const clean = (s: string) => fixBrand(s || '')
-      .replace(/\s*[Ã¢ÂÂÃ¢ÂÂ]\s*/g, ', ')
+      .replace(/\s*[ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ]\s*/g, ', ')
       .replace(/  +/g, ' ')
       .trim()
 
@@ -663,19 +670,55 @@ Return ONLY valid JSON:
       if (!trimmed) return trimmed
       const words = trimmed.split(/\s+/)
       if (words.length <= limit) return trimmed
-      const sentences = trimmed.split(/(?<=[.?!])\s+/)
-      let result = ''
+
+      // Split into paragraphs first (blank-line separated) so line breaks
+      // survive truncation instead of collapsing into one run-on block,
+      // then split each paragraph into sentences.
+      const paragraphs = trimmed.split(/\n{2,}/)
+      const allSentences: { text: string; words: number }[] = []
+      const paraLastIdx: number[] = []
+      for (const para of paragraphs) {
+        const sentences = para.trim().split(/(?<=[.?!])\s+/).filter(Boolean)
+        for (const s of sentences) {
+          const t = s.trim()
+          allSentences.push({ text: t, words: t.split(/\s+/).filter(Boolean).length })
+        }
+        paraLastIdx.push(allSentences.length - 1)
+      }
+
+      if (allSentences.length <= 1) {
+        return words.slice(0, limit).join(' ')
+      }
+
+      // Reserve the final sentence -- it almost always carries the CTA/ask
+      // (proposed dates, next step, or an SDR custom instruction) and must
+      // never be the part silently dropped just because earlier sentences
+      // ran long. Trim from the earlier/middle sentences instead.
+      const lastIdx = allSentences.length - 1
+      const lastWordCount = allSentences[lastIdx].words
+      const budgetForRest = Math.max(limit - lastWordCount, 0)
+      const kept = new Array(allSentences.length).fill(false)
       let count = 0
-      for (const s of sentences) {
-        const w = s.trim().split(/\s+/).filter(Boolean).length
-        if (count + w > limit) break
-        result += (result ? ' ' : '') + s.trim()
+      for (let i = 0; i < lastIdx; i++) {
+        const w = allSentences[i].words
+        if (count + w > budgetForRest) break
+        kept[i] = true
         count += w
       }
-      if (!result) {
-        result = words.slice(0, limit).join(' ')
+      kept[lastIdx] = true
+
+      // Rebuild paragraph by paragraph so blank-line breaks are preserved;
+      // a paragraph that lost every sentence to trimming is simply omitted.
+      let cursor = 0
+      const rebuilt: string[] = []
+      for (const endIdx of paraLastIdx) {
+        const paraSentences: string[] = []
+        for (; cursor <= endIdx; cursor++) {
+          if (kept[cursor]) paraSentences.push(allSentences[cursor].text)
+        }
+        if (paraSentences.length > 0) rebuilt.push(paraSentences.join(' '))
       }
-      return result
+      return rebuilt.join('\n\n')
     }
 
     return new Response(JSON.stringify({
