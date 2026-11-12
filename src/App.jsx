@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, Component } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import AppShell from './components/layout/AppShell';
 import { Toaster } from 'sonner';
@@ -38,6 +38,30 @@ const PageLoader = () => (
   </div>
 );
 
+// Belt-and-braces alongside the vite:preloadError handler in main.jsx --
+// catches any error thrown while rendering a lazy-loaded page (not just a
+// failed chunk fetch) so navigation never goes silently blank. Offers a
+// manual reload rather than looping, since this also catches real render
+// errors that a reload wouldn't fix.
+class RouteErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error) { console.error('Route render error:', error); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#888', fontSize: 14, gap: 12 }}>
+          <div>Something went wrong loading this page.</div>
+          <button onClick={() => window.location.reload()} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer', fontSize: 13 }}>
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function ProtectedRoute({ children }) {
   const { user, profile, loading } = useAuth();
   if (loading) return (
@@ -65,6 +89,7 @@ export default function App() {
       <Toaster richColors position="top-right" />
       <AuthProvider>
       <BrowserRouter>
+        <RouteErrorBoundary>
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
@@ -98,6 +123,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
+        </RouteErrorBoundary>
       </BrowserRouter>
       </AuthProvider>
     </>
