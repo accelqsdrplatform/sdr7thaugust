@@ -105,7 +105,7 @@ export default function Settings() {
     const { stageSpecByStage: specs } = await fetchDefaults();
     setStageSpecByStage(specs);
     setActiveStageTab('Fresh');
-    setEditingPrompt({ id: null, name: '', visibility: 'private', stage_config: emptyStageConfig() });
+    setEditingPrompt({ id: null, name: '', visibility: 'private', subject_hint: '', stage_config: emptyStageConfig() });
   }
 
   async function openEditPrompt(p) {
@@ -119,7 +119,7 @@ export default function Settings() {
         ? { mode: existing.mode || 'freeform', word_count: existing.word_count ?? null, tone: existing.tone || '', prompt_text: existing.prompt_text || '', guided: existing.guided || { focus: '', message: '', cta: '' } }
         : { mode: 'freeform', word_count: null, tone: '', prompt_text: '', guided: { focus: '', message: '', cta: '' } };
     });
-    setEditingPrompt({ id: p.id, name: p.name, visibility: p.visibility, stage_config: cfg });
+    setEditingPrompt({ id: p.id, name: p.name, visibility: p.visibility, subject_hint: p.subject_hint || '', stage_config: cfg });
   }
 
   function updateStage(stage, patch) {
@@ -156,7 +156,7 @@ export default function Settings() {
     });
     if (Object.keys(finalConfig).length === 0) { toast.error('Add rules for at least one stage before saving.'); return; }
     setSavingPrompt(true);
-    const payload = { owner_id: user.id, name: editingPrompt.name.trim(), visibility: editingPrompt.visibility, stage_config: finalConfig, prompt_text: '' };
+    const payload = { owner_id: user.id, name: editingPrompt.name.trim(), visibility: editingPrompt.visibility, subject_hint: (editingPrompt.subject_hint || '').trim() || null, stage_config: finalConfig, prompt_text: '' };
     let error;
     if (editingPrompt.id) {
       ({ error } = await supabase.from('email_prompts').update(payload).eq('id', editingPrompt.id));
@@ -274,6 +274,16 @@ export default function Settings() {
               <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>Name</label>
               <input value={editingPrompt.name} onChange={e => setEditingPrompt(ep => ({ ...ep, name: e.target.value }))}
                 placeholder="e.g. Casual tone" style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none' }} />
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>Subject line guidance</label>
+              <textarea value={editingPrompt.subject_hint || ''} onChange={e => setEditingPrompt(ep => ({ ...ep, subject_hint: e.target.value }))}
+                placeholder="e.g. Mention the account's industry in the subject when natural" rows={2}
+                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} />
+              <p style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
+                Only affects the first (Fresh) email -- follow-ups reuse that subject with "RE:" automatically.
+              </p>
             </div>
 
             <div style={{ display: 'flex', gap: 4, marginBottom: 12, borderBottom: '1px solid #eee', flexWrap: 'wrap' }}>
