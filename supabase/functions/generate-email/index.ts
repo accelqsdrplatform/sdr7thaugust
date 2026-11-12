@@ -736,7 +736,7 @@ Return ONLY valid JSON:
     let finalSubject = cleanSubject(parsed.subject)
     if (stageKey !== 'Fresh' && priorList.length > 0) {
       const original = priorList.find(e => e.stage === 'Fresh') || priorList[priorList.length - 1]
-      const bare = (original?.subject || '').replace(/^re:\s*/i, '').trim()
+      const bare = (original?.subject || '').replace(/\bre:\s*/gi, '').trim()
       if (bare) finalSubject = `RE: ${bare}`
     }
 
