@@ -4,33 +4,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  migrate:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - name: Install postgresql-client
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client
-
-      - name: Dump roles (source)
-        run: npx -y supabase db dump --db-url "${{ secrets.SOURCE_DB_URL }}" -f roles.sql --role-only
-
-      - name: Dump schema (source)
-        run: npx -y supabase db dump --db-url "${{ secrets.SOURCE_DB_URL }}" -f schema.sql
-
-      - name: Dump data (source, public+auth only)
-        run: npx -y supabase db dump --db-url "${{ secrets.SOURCE_DB_URL }}" -f data.sql --data-only --use-copy --schema public,auth
-
-      - name: Show dump files
-        run: ls -la *.sql && wc -l *.sql
-
-      - name: Restore into destination
-        run: |
-          psql --single-transaction --variable ON_ERROR_STOP=1 \
-            --file roles.sql --file schema.sql \
-            --command "SET session_replication_role = replica" \
-            --file data.sql \
-            --dbname "${{ secrets.DEST_DB_URL }}"
 
       - name: Verify row counts (dynamic, all public tables + auth.users)
         run: |
