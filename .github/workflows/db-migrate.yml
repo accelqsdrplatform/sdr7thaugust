@@ -18,8 +18,8 @@ jobs:
       - name: Dump schema (source)
         run: npx -y supabase db dump --db-url "${{ secrets.SOURCE_DB_URL }}" -f schema.sql
 
-      - name: Dump data (source)
-        run: npx -y supabase db dump --db-url "${{ secrets.SOURCE_DB_URL }}" -f data.sql --data-only --use-copy
+      - name: Dump data (source, public+auth only)
+        run: npx -y supabase db dump --db-url "${{ secrets.SOURCE_DB_URL }}" -f data.sql --data-only --use-copy --schema public,auth
 
       - name: Show dump files
         run: ls -la *.sql && wc -l *.sql
@@ -35,6 +35,6 @@ jobs:
       - name: Verify row counts
         run: |
           echo "=== SOURCE ==="
-          psql "${{ secrets.SOURCE_DB_URL }}" -c "select 'contacts' t, count(*) from contacts union all select 'accounts', count(*) from accounts union all select 'emails', count(*) from emails union all select 'profiles', count(*) from profiles union all select 'email_prompts', count(*) from email_prompts union all select 'email_responses', count(*) from email_responses;"
+          psql "${{ secrets.SOURCE_DB_URL }}" -c "select 'contacts' t, count(*) from contacts union all select 'accounts', count(*) from accounts union all select 'emails', count(*) from emails union all select 'profiles', count(*) from profiles union all select 'email_prompts', count(*) from email_prompts union all select 'email_responses', count(*) from email_responses union all select 'auth.users', count(*) from auth.users;"
           echo "=== DEST ==="
-          psql "${{ secrets.DEST_DB_URL }}" -c "select 'contacts' t, count(*) from contacts union all select 'accounts', count(*) from accounts union all select 'emails', count(*) from emails union all select 'profiles', count(*) from profiles union all select 'email_prompts', count(*) from email_prompts union all select 'email_responses', count(*) from email_responses;"
+          psql "${{ secrets.DEST_DB_URL }}" -c "select 'contacts' t, count(*) from contacts union all select 'accounts', count(*) from accounts union all select 'emails', count(*) from emails union all select 'profiles', count(*) from profiles union all select 'email_prompts', count(*) from email_prompts union all select 'email_responses', count(*) from email_responses union all select 'auth.users', count(*) from auth.users;"
