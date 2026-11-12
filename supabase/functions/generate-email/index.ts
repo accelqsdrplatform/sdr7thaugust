@@ -721,8 +721,19 @@ Return ONLY valid JSON:
       return rebuilt.join('\n\n')
     }
 
+    // Follow-up stages are replies in the same thread, not a fresh pitch --
+    // reuse the first (Fresh-stage) subject with "RE: " instead of whatever
+    // new subject the model wrote (it has no reliable way to know the
+    // original subject should be echoed back, so we enforce it here).
+    let finalSubject = cleanSubject(parsed.subject)
+    if (stageKey !== 'Fresh' && priorList.length > 0) {
+      const original = priorList.find(e => e.stage === 'Fresh') || priorList[priorList.length - 1]
+      const bare = (original?.subject || '').replace(/^re:\s*/i, '').trim()
+      if (bare) finalSubject = `RE: ${bare}`
+    }
+
     return new Response(JSON.stringify({
-      subject: cleanSubject(parsed.subject),
+      subject: finalSubject,
       body: enforceWordLimit(stripSignoff(clean(parsed.body)), effectiveWordLimit),
       hook_used: parsed.hook_used || null,
       facts_asserted: Array.isArray(parsed.facts_asserted) ? parsed.facts_asserted : [],
