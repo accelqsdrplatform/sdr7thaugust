@@ -32,16 +32,7 @@ LANGUAGE:
 - Never describe ACCELQ as a no-code testing tool. Never say it replaces or
   beats the platform they run.
 - No sign-off, no sender name, no signature. End on the last sentence the
-  stage spec calls for.
-
-SUBJECT LINE:
-- Under 50 characters. Natural, like internal mail -- not a marketing headline.
-- Capitalize the first letter of the subject.
-- Keep product names, platform names and acronyms in their correct case exactly
-  as written elsewhere in this prompt -- never lowercase them. For example:
-  API (not api), SAP (not sap), QA (not qa), ACCELQ (not accelq), ServiceNow,
-  Salesforce, nCino. The rest of the subject can stay in natural sentence case.
-- No ALL CAPS, no spam words, no colon used as a marketing device.`
+  stage spec calls for.`
 
 // ============================================================
 // 6 - STAGE SPECS (verbatim from PROMPT-email-generation.md)
@@ -309,7 +300,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, contact, stage, accountResearch, accountNote, priorEmails, customPrompt, customWritingRules, customStageConfig } = await req.json()
+    const { action, contact, stage, accountResearch, accountNote, priorEmails, customPrompt, customWritingRules, customStageConfig, customSubjectHint } = await req.json()
 
     // Settings > My Writing Prompts calls this to show the real current default
     // text, pre-filled, before a rep writes their own version -- no AI call needed.
@@ -531,6 +522,22 @@ WRITING RULES
 ${(customWritingRules && customWritingRules.trim()) ? customWritingRules.trim() : DEFAULT_WRITING_RULES}
 `
 
+    // ---- 12b. Subject line rules (always included, independent of
+    // hasStageConfig/customWritingRules -- subject guidance must never
+    // silently disappear just because the rep set a custom body prompt) ----
+    const subjectRulesBlock = `========================================
+SUBJECT LINE
+========================================
+- Under 50 characters. Natural, like internal mail -- not a marketing headline.
+- Capitalize the first letter of the subject.
+- Keep product names, platform names and acronyms in their correct case exactly
+  as written elsewhere in this prompt -- never lowercase them. For example:
+  API (not api), SAP (not sap), QA (not qa), ACCELQ (not accelq), ServiceNow,
+  Salesforce, nCino. The rest of the subject can stay in natural sentence case.
+- No ALL CAPS, no spam words, no colon used as a marketing device.${(stageKey === 'Fresh' && customSubjectHint && customSubjectHint.trim()) ? `
+- SDR's own guidance for this subject: ${customSubjectHint.trim()}` : ''}
+`
+
     // ---- custom instructions (SDR override, if provided) ----
     const customWordMatch = customPrompt?.match(/(\d+)\s*words?/i)
     const customWordLimit = customWordMatch ? parseInt(customWordMatch[1], 10) : null
@@ -598,6 +605,7 @@ Return ONLY valid JSON:
       priorEmailsBlock,
       customInstructions,
       writingRulesBlock,
+      subjectRulesBlock,
       selfCheckBlock,
     ].filter(Boolean).join('\n')
 
