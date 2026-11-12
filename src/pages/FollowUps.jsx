@@ -485,18 +485,23 @@ export default function FollowUps() {
       }
     }
     const account=accounts[contact.account_id]||{};
+    // Steps after the first are replies in the same thread, not new pitches
+    // -- reuse step 1's subject with "RE: " instead of sending a fresh one.
+    const step1Obj = steps.find(s=>s.step_number===1);
+    const mergedSubject = applyMergeFields((ta.current_step>1 ? (step1Obj?.subject||currentStepObj?.subject) : currentStepObj?.subject), contact, account);
+    const sentSubject = ta.current_step>1 ? ('RE: ' + mergedSubject.replace(/^re:\s*/i,'').trim()) : mergedSubject;
     await supabase.from('activity_log').insert({
       actor_id:user.id, contact_id:contact.id, activity_type:'email_sent',
       details:{
         from_stage:`Templated step ${ta.current_step}`,
         to_stage: isLast?'Sequence Complete':`Templated step ${ta.current_step+1}`,
-        subject: applyMergeFields(currentStepObj?.subject, contact, account),
+        subject: sentSubject,
         body: applyMergeFields(currentStepObj?.body, contact, account),
       },
     });
     await supabase.from('emails').insert({
       contact_id:contact.id, owner_id:user.id, stage:`Templated step ${ta.current_step}`,
-      subject: applyMergeFields(currentStepObj?.subject, contact, account),
+      subject: sentSubject,
       body: applyMergeFields(currentStepObj?.body, contact, account),
       direction:'outbound', sent_at:now,
       source_type:'template', source_id:ta.template_id,
