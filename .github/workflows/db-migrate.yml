@@ -32,9 +32,9 @@ jobs:
             --file data.sql \
             --dbname "${{ secrets.DEST_DB_URL }}"
 
-      - name: Verify row counts
+      - name: Verify row counts (dynamic, all public tables + auth.users)
         run: |
           echo "=== SOURCE ==="
-          psql "${{ secrets.SOURCE_DB_URL }}" -c "select 'contacts' t, count(*) from contacts union all select 'accounts', count(*) from accounts union all select 'emails', count(*) from emails union all select 'profiles', count(*) from profiles union all select 'email_prompts', count(*) from email_prompts union all select 'email_responses', count(*) from email_responses union all select 'auth.users', count(*) from auth.users;"
+          psql "${{ secrets.SOURCE_DB_URL }}" -c "DO \$\$ DECLARE r record; cnt bigint; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename LOOP EXECUTE format('SELECT count(*) FROM public.%I', r.tablename) INTO cnt; RAISE NOTICE '%: %', r.tablename, cnt; END LOOP; EXECUTE 'SELECT count(*) FROM auth.users' INTO cnt; RAISE NOTICE 'auth.users: %', cnt; END \$\$;"
           echo "=== DEST ==="
-          psql "${{ secrets.DEST_DB_URL }}" -c "select 'contacts' t, count(*) from contacts union all select 'accounts', count(*) from accounts union all select 'emails', count(*) from emails union all select 'profiles', count(*) from profiles union all select 'email_prompts', count(*) from email_prompts union all select 'email_responses', count(*) from email_responses union all select 'auth.users', count(*) from auth.users;"
+          psql "${{ secrets.DEST_DB_URL }}" -c "DO \$\$ DECLARE r record; cnt bigint; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename LOOP EXECUTE format('SELECT count(*) FROM public.%I', r.tablename) INTO cnt; RAISE NOTICE '%: %', r.tablename, cnt; END LOOP; EXECUTE 'SELECT count(*) FROM auth.users' INTO cnt; RAISE NOTICE 'auth.users: %', cnt; END \$\$;"
