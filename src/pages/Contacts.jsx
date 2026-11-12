@@ -170,12 +170,12 @@ export default function Contacts() {
   async function fetchFilterOptions() {
     let foq = supabase
       .from('contacts')
-      .select('account_id, pitch_type, persona, campaign, company, status, source, accounts(industry, country)');
+      .select('account_id, pitch_type, pitch_types, persona, campaign, company, status, source, accounts(industry, country)');
     if (!viewAll || !canViewAll) foq = foq.eq('owner_id', user.id);
     const { data } = await foq;
     const rows = data || [];
     setIndustries([...new Set(rows.map(c => c.accounts?.industry || '').filter(Boolean))].sort());
-    setPitchTypes([...new Set(rows.map(c => c.pitch_type).filter(Boolean))].sort());
+    setPitchTypes([...new Set(rows.flatMap(c => (Array.isArray(c.pitch_types) && c.pitch_types.length > 0) ? c.pitch_types : (c.pitch_type ? [c.pitch_type] : [])))].sort());
     setPersonas([...new Set(rows.map(c => c.persona).filter(Boolean))].sort());
     setCampaigns([...new Set(rows.map(c => c.campaign).filter(Boolean))].sort());
     setCompanies([...new Set(rows.map(c => c.company).filter(Boolean))].sort());
@@ -223,7 +223,7 @@ export default function Contacts() {
       const s = `%${debouncedSearch}%`;
       q = q.or(`first_name.ilike.${s},last_name.ilike.${s},email.ilike.${s},company.ilike.${s}`);
     }
-    if (pitchTypeFilter) q = q.eq('pitch_type', pitchTypeFilter);
+    if (pitchTypeFilter) q = q.or(`pitch_type.eq.${pitchTypeFilter},pitch_types.cs.{${pitchTypeFilter}}`);
     if (personaFilter)   q = q.eq('persona', personaFilter);
     if (campaignFilter)  q = q.eq('campaign', campaignFilter);
     if (companyFilter)   q = q.eq('company', companyFilter);
@@ -1303,6 +1303,29 @@ const PITCH_TYPE_VALUES = new Set([
   'web','mobile','api',
 ].map(s => s.toLowerCase()));
 
+// Canonical display casing, matching the PITCH_TYPES list used by the
+// multi-select picker on the Accounts page, so values parsed out of a CSV
+// line up with the same badges/checkboxes instead of showing as a
+// differently-cased duplicate.
+const PITCH_TYPE_CANON = {
+  oracle: 'Oracle', sap: 'SAP', salesforce: 'Salesforce', servicenow: 'ServiceNow',
+  workday: 'Workday', 'ms dynamics': 'MS Dynamics', pega: 'Pega', ncino: 'nCino',
+  coupa: 'Coupa', web: 'Web', mobile: 'Mobile', api: 'API',
+};
+
+// A CSV cell can list more than one pitch type for a contact (e.g.
+// "SAP, Oracle" or "SAP / Oracle / Web"). Split on common separators,
+// canonicalize casing when it's a known platform, and dedupe - instead of
+// treating the whole cell as one literal string that won't match anything.
+function splitPitchTypes(val) {
+  return (val || '')
+    .split(/[,;|/]|\s+(?:and|&)\s+/i)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => PITCH_TYPE_CANON[s.toLowerCase()] || s)
+    .filter((v, i, arr) => arr.indexOf(v) === i);
+}
+
 const FIELD_GUESS = [
   { field: 'full_name',     keys: ['name','full_name','fullname','contact_name','contact'] },
   { field: 'first_name',    keys: ['first_name','firstname','first'] },
@@ -1466,7 +1489,7 @@ function UploadCSV({ userId, onDone }) {
       );
       if (!ok) return;
     }
-    const rows = csvDataRows.map(vals => {
+    let rows = csvDataRows.map(vals => {
       const obj = { owner_id: userId, status: 'Fresh' };
       let firstName = '', lastName = '';
       Object.entries(mapping).forEach(([idxStr, field]) => {
@@ -1484,6 +1507,15 @@ function UploadCSV({ userId, onDone }) {
           lastName = val;
         } else if (field === 'status') {
           // ignore — new contacts always start as Fresh regardless of any status/stage column in the source file
+        } else if (field === 'pitch_type') {
+          // A cell can carry multiple pitch types (comma/semicolon/slash/"and"
+          // separated). Store the full set in pitch_types and keep pitch_type
+          // pointed at the first one for any older code still reading it.
+          const types = splitPitchTypes(val);
+          if (types.length) {
+            obj.pitch_types = types;
+            obj.pitch_type = types[0];
+          }
         } else {
           obj[field] = val;
         }
@@ -1492,6 +1524,33 @@ function UploadCSV({ userId, onDone }) {
       obj.last_name = lastName;
       return obj;
     }).filter(r => r.first_name || r.last_name || r.email);
+
+    // Multiple CSV rows can represent the same contact — most commonly one
+    // row per pitch type. Collapse rows that share the same dupe key (email,
+    // or name+company when there's no email) into a single row, unioning
+    // their pitch types instead of fragmenting into duplicate contacts or
+    // silently losing every row after the first.
+    {
+      const byKey = new Map();
+      const mergedRows = [];
+      rows.forEach(r => {
+        const e = (r.email || '').trim().toLowerCase();
+        const nck = nameCompanyKey(r);
+        const key = e ? 'email:' + e : (nck ? 'nc:' + nck : null);
+        if (!key) { mergedRows.push(r); return; }
+        const existing = byKey.get(key);
+        if (!existing) { byKey.set(key, r); mergedRows.push(r); return; }
+        const existingTypes = Array.isArray(existing.pitch_types) ? existing.pitch_types : (existing.pitch_type ? [existing.pitch_type] : []);
+        const rowTypes = Array.isArray(r.pitch_types) ? r.pitch_types : (r.pitch_type ? [r.pitch_type] : []);
+        const unioned = [...new Set([...existingTypes, ...rowTypes])];
+        if (unioned.length) { existing.pitch_types = unioned; existing.pitch_type = unioned[0]; }
+        Object.keys(r).forEach(k => {
+          if (k === 'pitch_type' || k === 'pitch_types') return;
+          if ((existing[k] === undefined || existing[k] === '' || existing[k] == null) && r[k]) existing[k] = r[k];
+        });
+      });
+      rows = mergedRows;
+    }
 
     if (rows.length === 0) { setMsg('No valid rows found — check your column mapping'); setStep('idle'); return; }
 
