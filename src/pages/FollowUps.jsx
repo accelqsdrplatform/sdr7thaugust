@@ -334,6 +334,7 @@ export default function FollowUps() {
         stage:emailStage, customPrompt:customPrompt||null,
         customWritingRules:(writingStyles.find(w=>w.id===selectedStyleId)?.prompt_text)||null,
         customStageConfig:(writingStyles.find(w=>w.id===selectedStyleId)?.stage_config?.[emailStage])||null,
+        customSubjectHint:(writingStyles.find(w=>w.id===selectedStyleId)?.subject_hint)||null,
         accountResearch:{...(account.research||{}), testing_tools:account.testing_tools||[], enterprise_apps:account.enterprise_apps||[], saas_apps:account.saas_apps||[], employees:account.employee_count||null, revenue:account.revenue_millions?('$'+account.revenue_millions+'M'):null}, accountNote:companyNoteMap[contact.company]||account.notes||'',
         senderName, priorEmails,
       }});
