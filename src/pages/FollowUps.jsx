@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
+import { toast } from 'sonner';
 import BulkSelectPopover from '../components/BulkSelectPopover';
 
 const DEFAULT_CADENCE = { Fresh: 3, F1: 3, F2: 4, F3: 7, F4: 7 };
@@ -341,8 +342,10 @@ export default function FollowUps() {
       if(!res.error&&res.data?.subject){
         setDrafts(d=>({...d,[contact.id]:{subject:res.data.subject,body:res.data.body,strategy:res.data.strategy||null,hookUsed:res.data.hook_used||null,factsAsserted:res.data.facts_asserted||[],unverified:res.data.unverified||[]}}));
         if(!silent) setDraftOpen(contact.id);
+      } else if(!silent){
+        toast.error('Could not generate email. Please try again in a moment.');
       }
-    } catch(e){console.error(e);}
+    } catch(e){console.error(e); if(!silent) toast.error('Could not generate email. Please try again in a moment.');}
     if(!silent) setDrafting(null);
   }
 
