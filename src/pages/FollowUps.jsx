@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
-import { toast } from 'sonner';
 import BulkSelectPopover from '../components/BulkSelectPopover';
 
 const DEFAULT_CADENCE = { Fresh: 3, F1: 3, F2: 4, F3: 7, F4: 7 };
