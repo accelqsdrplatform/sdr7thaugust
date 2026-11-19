@@ -52,7 +52,22 @@ export default function MfaChallenge() {
         code: code.trim(),
       });
       if (vErr) throw vErr;
-      await refreshAal();
+
+      // verify() just elevated this session to AAL2, but the local Supabase
+      // client can take a moment to finish propagating that before
+      // getAuthenticatorAssuranceLevel() reflects it. Poll briefly instead
+      // of navigating on stale state, which would just bounce back to this
+      // same screen via ProtectedRoute with no visible explanation.
+      let confirmed = false;
+      for (let i = 0; i < 10; i++) {
+        const result = await refreshAal();
+        if (result && result.currentLevel === result.nextLevel) { confirmed = true; break; }
+        await new Promise(r => setTimeout(r, 300));
+      }
+      if (!confirmed) {
+        setError('Code accepted, but your session is taking a moment to update. Please wait a few seconds and reload the page.');
+        return;
+      }
       navigate('/', { replace: true });
     } catch (err) {
       setError(err.message || 'Invalid code. Try again.');
