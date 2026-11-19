@@ -10,6 +10,8 @@ const Signup        = lazy(() => import('./pages/Signup'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword  = lazy(() => import('./pages/ResetPassword'));
 const PendingApproval = lazy(() => import('./pages/PendingApproval'));
+const MfaSetup      = lazy(() => import('./pages/MfaSetup'));
+const MfaChallenge  = lazy(() => import('./pages/MfaChallenge'));
 const Dashboard    = lazy(() => import('./pages/Dashboard'));
 const Contacts     = lazy(() => import('./pages/Contacts'));
 const FollowUps    = lazy(() => import('./pages/FollowUps'));
@@ -62,16 +64,36 @@ class RouteErrorBoundary extends Component {
   }
 }
 
-function ProtectedRoute({ children }) {
-  const { user, profile, loading } = useAuth();
-  if (loading) return (
+function FullLoader() {
+  return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#aaa', fontSize: 14 }}>
       Loading…
     </div>
   );
+}
+
+function ProtectedRoute({ children }) {
+  const { user, profile, loading, aalLoading, mfaEnrolled, mfaVerified } = useAuth();
+  if (loading || aalLoading) return <FullLoader />;
   if (!user) return <Navigate to="/login" replace />;
   // A signed-up-but-not-yet-approved user has an org_hierarchy row with
   // approved: false — block them from the app until an admin approves.
+  if (profile && profile.approved === false) return <Navigate to="/pending-approval" replace />;
+  // MFA is mandatory for every user. No verified TOTP factor yet — force
+  // enrollment. A verified factor exists but this session hasn't passed the
+  // challenge yet — force verification. Only then can the app shell render.
+  if (!mfaEnrolled) return <Navigate to="/mfa-setup" replace />;
+  if (!mfaVerified) return <Navigate to="/mfa-challenge" replace />;
+  return children;
+}
+
+// Used for the MFA setup/challenge pages themselves: requires a logged-in,
+// approved user, but deliberately does NOT run the MFA checks above —
+// otherwise an unenrolled/unverified user could never reach those pages.
+function AuthOnlyRoute({ children }) {
+  const { user, profile, loading } = useAuth();
+  if (loading) return <FullLoader />;
+  if (!user) return <Navigate to="/login" replace />;
   if (profile && profile.approved === false) return <Navigate to="/pending-approval" replace />;
   return children;
 }
@@ -97,6 +119,8 @@ export default function App() {
             <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/pending-approval" element={<PendingApproval />} />
+            <Route path="/mfa-setup" element={<AuthOnlyRoute><MfaSetup /></AuthOnlyRoute>} />
+            <Route path="/mfa-challenge" element={<AuthOnlyRoute><MfaChallenge /></AuthOnlyRoute>} />
             <Route path="/" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
               <Route index element={<Dashboard />} />
               <Route path="contacts" element={<Contacts />} />
