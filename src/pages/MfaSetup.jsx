@@ -12,7 +12,7 @@ import { signOut } from '../lib/auth';
 // before we consider them enrolled.
 export default function MfaSetup() {
   const navigate = useNavigate();
-  const { mfaEnrolled, mfaVerified, refreshAal } = useAuth();
+  const { aalLoading, mfaEnrolled, mfaVerified, refreshAal } = useAuth();
   const [factorId, setFactorId] = useState(null);
   const [qrSvg, setQrSvg] = useState('');
   const [secret, setSecret] = useState('');
@@ -25,14 +25,28 @@ export default function MfaSetup() {
   // person lost access to their existing authenticator. Supabase requires
   // you to already be MFA-verified to add another factor, by design, so the
   // only way out is an admin clearing the stuck factor (Team Members ->
-  // Reset MFA), not anything this page can self-serve.
+  // Reset MFA), not anything this page can self-serve. This should now be
+  // rare — see the routing guard below — but stays as a defensive fallback.
   const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
-    if (mfaEnrolled && mfaVerified) { navigate('/', { replace: true }); return; }
+    // Don't decide anything off a stale/incomplete AAL read — AuthContext
+    // fetches it asynchronously, and this page can mount before that
+    // finishes. Reacting early was the actual bug: an already-enrolled user
+    // opening /mfa-setup (an old tab, a bookmark, browser back) before aal
+    // had loaded would see mfaEnrolled as false, call enroll(), and collide
+    // with their existing verified factor — the "AAL2 required" error.
+    if (aalLoading) return;
+    if (mfaEnrolled) {
+      // Already enrolled: either this session is already verified (nothing
+      // to do here), or it just needs the normal challenge — never try to
+      // enroll a second factor against an already-protected account.
+      navigate(mfaVerified ? '/' : '/mfa-challenge', { replace: true });
+      return;
+    }
     enroll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [aalLoading, mfaEnrolled, mfaVerified]);
 
   async function enroll() {
     setLoading(true);
@@ -58,6 +72,15 @@ export default function MfaSetup() {
     } catch (err) {
       const msg = err?.message || '';
       if (/aal2/i.test(msg) || err?.code === 'insufficient_aal') {
+        // Our own aal state said this account wasn't enrolled, but Supabase
+        // disagrees (e.g. it only just now became consistent). Refresh and
+        // retry the routing decision once before giving up and showing the
+        // blocked state — this handles any remaining propagation delay.
+        const result = await refreshAal();
+        if (result && result.nextLevel === 'aal2') {
+          navigate(result.currentLevel === result.nextLevel ? '/' : '/mfa-challenge', { replace: true });
+          return;
+        }
         setBlocked(true);
       } else {
         setError(msg || 'Could not start MFA enrollment.');
@@ -108,7 +131,9 @@ export default function MfaSetup() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f3' }}>
       <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e0e0e0', padding: '40px 36px', width: 420, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-        {blocked ? (
+        {aalLoading ? (
+          <div style={{ color: '#aaa', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>Loading…</div>
+        ) : blocked ? (
           <>
             <div style={{ fontSize: 20, fontWeight: 600, color: '#111', marginBottom: 6 }}>Can't set up a new authenticator</div>
             <div style={{ fontSize: 13, color: '#666', marginBottom: 20, lineHeight: 1.6 }}>
