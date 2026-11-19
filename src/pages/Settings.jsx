@@ -461,7 +461,7 @@ export default function Settings() {
         ) : (
           <>
             {loadingPrompts ? (
-              <div style={{ color: '#aaa' }}>Loading...</div>
+              <div style={{ color: '#aaa' }}>Loading…</div>
             ) : myPrompts.length === 0 ? (
               <div style={{ fontSize: 13, color: '#999', marginBottom: 14 }}>You haven't saved any writing prompts yet.</div>
             ) : (
@@ -514,7 +514,7 @@ export default function Settings() {
         {!showClear ? (
           <button onClick={() => setShowClear(true)}
             style={{ padding: '8px 18px', background: '#fff', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-            \u{Clear All Data
+            Clear All Data
           </button>
         ) : (
           <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 10, padding: 16 }}>
