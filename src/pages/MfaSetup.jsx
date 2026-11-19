@@ -97,10 +97,9 @@ export default function MfaSetup() {
         ) : (
           <>
             {qrSvg && (
-              <div
-                style={{ display: 'flex', justifyContent: 'center', background: '#fff', border: '1px solid #eee', borderRadius: 8, padding: 16, marginBottom: 14 }}
-                dangerouslySetInnerHTML={{ __html: qrSvg }}
-              />
+              <div style={{ display: 'flex', justifyContent: 'center', background: '#fff', border: '1px solid #eee', borderRadius: 8, padding: 16, marginBottom: 14 }}>
+                <img src={qrSvg} alt="Scan this QR code with your authenticator app" style={{ width: 200, height: 200 }} />
+              </div>
             )}
             {secret && (
               <div style={{ fontSize: 11, color: '#888', textAlign: 'center', marginBottom: 20, wordBreak: 'break-all' }}>
