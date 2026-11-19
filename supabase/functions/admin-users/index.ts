@@ -33,7 +33,7 @@ function computeDownline(rootId: string, allRows: { user_id: string; reports_to:
   return seen;
 }
 
-// Direct reports only (plus self) — NOT the full transitive downline.
+// Direct reports only (plus self) \u2014 NOT the full transitive downline.
 // Sub-admins should only see/manage people who report to them directly.
 function directReportIds(rootId: string, allRows: { user_id: string; reports_to: string | null }[]): Set<string> {
   const ids = new Set<string>([rootId]);
@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   try {
-    // User client — to verify caller identity and role
+    // User client \u2014 to verify caller identity and role
     const userClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!
@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
     const { data: { user } } = await userClient.auth.getUser(token);
     if (!user) return ok({ error: "Unauthorized" });
 
-    // Admin client — needed to list auth.users and bypass RLS on org_hierarchy
+    // Admin client \u2014 needed to list auth.users and bypass RLS on org_hierarchy
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -66,12 +66,12 @@ Deno.serve(async (req: Request) => {
     const { action } = body;
 
     // A freshly signed-up user has no org_hierarchy row yet and isn't an
-    // admin/sub-admin — handle their own self-service actions before the
+    // admin/sub-admin \u2014 handle their own self-service actions before the
     // admin gate below.
     if (action === "self_register") {
       const email = (user.email || "").toLowerCase();
       if (!email.endsWith(ALLOWED_SIGNUP_DOMAIN)) {
-        return ok({ error: \`Signups are restricted to \${ALLOWED_SIGNUP_DOMAIN} addresses\` });
+        return ok({ error: `Signups are restricted to ${ALLOWED_SIGNUP_DOMAIN} addresses` });
       }
       const { data: existing } = await admin.from("org_hierarchy").select("user_id, approved").eq("user_id", user.id).maybeSingle();
       if (existing) {
@@ -103,13 +103,13 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (!callerRow || !['admin', 'sub-admin'].includes(callerRow.role)) {
-      return ok({ error: "Forbidden — admins and sub-admins only" });
+      return ok({ error: "Forbidden \u2014 admins and sub-admins only" });
     }
     const isAdmin = callerRow.role === 'admin';
 
     // Only a real admin may ask to see the platform "as" someone else (the
     // admin dashboard's View-as feature swaps the client's user/profile, but
-    // this edge function always authenticates the real caller — view_as lets
+    // this edge function always authenticates the real caller \u2014 view_as lets
     // an admin faithfully preview a sub-admin's scoped Team Members list
     // without actually weakening anyone's real permissions).
     const viewAsId: string | null = isAdmin && body.view_as ? body.view_as : null;
@@ -157,7 +157,7 @@ Deno.serve(async (req: Request) => {
 
     // LIST pending signups awaiting approval (admin only)
     if (action === "list_pending") {
-      if (!isAdmin) return ok({ error: "Forbidden — admins only" });
+      if (!isAdmin) return ok({ error: "Forbidden \u2014 admins only" });
       const { data: { users }, error } = await admin.auth.admin.listUsers({ perPage: 200 });
       if (error) return ok({ error: error.message });
       const { data: hierarchy } = await admin.from("org_hierarchy").select("*").eq("approved", false);
@@ -176,7 +176,7 @@ Deno.serve(async (req: Request) => {
 
     // APPROVE a pending signup (admin only)
     if (action === "approve_user") {
-      if (!isAdmin) return ok({ error: "Forbidden — admins only" });
+      if (!isAdmin) return ok({ error: "Forbidden \u2014 admins only" });
       const { user_id, role, region, reports_to } = body;
       if (!user_id) return ok({ error: "user_id required" });
       if (!role || !ALLOWED_ROLES.includes(role)) return ok({ error: "A valid role is required to approve" });
@@ -191,10 +191,10 @@ Deno.serve(async (req: Request) => {
       return ok({ ok: true });
     }
 
-    // REJECT a pending signup (admin only) — removes their profile row and
+    // REJECT a pending signup (admin only) \u2014 removes their profile row and
     // their auth account entirely, so a rejected email can sign up again later.
     if (action === "reject_user") {
-      if (!isAdmin) return ok({ error: "Forbidden — admins only" });
+      if (!isAdmin) return ok({ error: "Forbidden \u2014 admins only" });
       const { user_id } = body;
       if (!user_id) return ok({ error: "user_id required" });
 
@@ -218,18 +218,18 @@ Deno.serve(async (req: Request) => {
 
       if (!effectiveIsAdmin) {
         // Sub-admins (real or previewed via view_as) may only touch users
-        // who report directly to them (or themselves) — not their whole downline.
+        // who report directly to them (or themselves) \u2014 not their whole downline.
         const direct = directReportIds(effectiveId, rows);
         if (!direct.has(user_id)) {
-          return ok({ error: "Forbidden — that user isn't on your team" });
+          return ok({ error: "Forbidden \u2014 that user isn't on your team" });
         }
         // No privilege escalation: a sub-admin can never grant admin or sub-admin role.
         if (role && ['admin', 'sub-admin'].includes(role)) {
-          return ok({ error: "Forbidden — only an admin can grant admin or sub-admin access" });
+          return ok({ error: "Forbidden \u2014 only an admin can grant admin or sub-admin access" });
         }
         // A sub-admin may only re-point reports_to at someone who reports directly to them.
         if (reports_to && !direct.has(reports_to)) {
-          return ok({ error: "Forbidden — can only reassign within your own team" });
+          return ok({ error: "Forbidden \u2014 can only reassign within your own team" });
         }
       }
 
@@ -243,6 +243,25 @@ Deno.serve(async (req: Request) => {
       if (error) return ok({ error: error.message });
 
       return ok({ ok: true });
+    }
+
+    // RESET a user's MFA (admin only) \u2014 Supabase's MFA has no built-in
+    // recovery codes, so if someone loses their authenticator device this is
+    // the only way back in: an admin clears their TOTP factor(s) and they are
+    // walked through /mfa-setup again on next login.
+    if (action === "reset_mfa") {
+      if (!isAdmin) return ok({ error: "Forbidden \u2014 admins only" });
+      const { user_id } = body;
+      if (!user_id) return ok({ error: "user_id required" });
+
+      const { data: factorData, error: listError } = await admin.auth.admin.mfa.listFactors({ userId: user_id });
+      if (listError) return ok({ error: listError.message });
+
+      for (const factor of factorData?.factors || []) {
+        const { error: delError } = await admin.auth.admin.mfa.deleteFactor({ id: factor.id, userId: user_id });
+        if (delError) return ok({ error: delError.message });
+      }
+      return ok({ ok: true, cleared: (factorData?.factors || []).length });
     }
 
     return ok({ error: "Unknown action" });
