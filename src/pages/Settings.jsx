@@ -16,16 +16,59 @@ export default function Settings() {
   const [apolloSaving, setApolloSaving] = useState(false);
   const [apolloSaved, setApolloSaved] = useState('');
 
+  const [showClear, setShowClear] = useState(false);
+  const [clearInput, setClearInput] = useState('');
+  const [clearing, setClearing] = useState(false);
+  const [clearMsg, setClearMsg] = useState('');
+
+  // ---- Two-factor authentication ----
+  const [mfaFactors, setMfaFactors] = useState([]);
+  const [mfaLoadingList, setMfaLoadingList] = useState(true);
+  const [mfaRemoving, setMfaRemoving] = useState(false);
+
+  useEffect(() => {
+    async function loadFactors() {
+      const { data } = await supabase.auth.mfa.listFactors();
+      setMfaFactors((data?.totp || []).filter(f => f.status === 'verified'));
+      setMfaLoadingList(false);
+    }
+    loadFactors();
+  }, []);
+
+  async function removeMfaFactor(factorId) {
+    if (!window.confirm('Remove this authenticator? You will be required to set up a new one the next time you sign in.')) return;
+    setMfaRemoving(true);
+    const { error } = await supabase.auth.mfa.unenroll({ factorId });
+    setMfaRemoving(false);
+    if (error) { toast.error('Could not remove: ' + error.message); return; }
+    toast.success('Authenticator removed. You will be asked to set up a new one.');
+    window.location.href = '/mfa-setup';
+  }
+
+  async function clearAllData() {
+    if (!isDirector) return;
+    if (clearInput !== 'DELETE') return;
+    setClearing(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from('contacts').delete().eq('owner_id', user.id);
+    await supabase.from('accounts').delete().eq('owner_id', user.id);
+    setClearing(false);
+    setShowClear(false);
+    setClearInput('');
+    setClearMsg('All contacts and accounts deleted.');
+    setTimeout(() => setClearMsg(''), 5000);
+  }
+
   useEffect(() => {
     async function load() {
       const { data } = await supabase.from('org_config').select('ai_api_key, ai_provider').single();
       if (data) {
-        setApiKey(data.ai_api_key ? '••••••••••••••••' : '');
+        setApiKey(data.ai_api_key ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' : '');
         setProvider(data.ai_provider || 'anthropic');
       }
       if (isDirector) {
         const { data: ap } = await supabase.from('org_settings').select('value').eq('key', 'apollo_api_key').single();
-        if (ap?.value) setApolloKey('••••••••••••••••');
+        if (ap?.value) setApolloKey('\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022');
       }
       setLoading(false);
     }
@@ -33,7 +76,7 @@ export default function Settings() {
   }, [isDirector]);
 
   async function save() {
-    if (!apiKey || apiKey.startsWith('••')) { setSaved('No change — key not updated'); return; }
+    if (!apiKey || apiKey.startsWith('\u2022\u2022')) { setSaved('No change \u2014 key not updated'); return; }
     setSaving(true);
     const { data: existing } = await supabase.from('org_config').select('id').single();
     let err;
@@ -46,17 +89,17 @@ export default function Settings() {
     }
     setSaving(false);
     if (err) { setSaved('Error: ' + err.message); }
-    else { setSaved('API key saved successfully!'); setApiKey('••••••••••••••••'); }
+    else { setSaved('API key saved successfully!'); setApiKey('\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'); }
     setTimeout(() => setSaved(''), 4000);
   }
 
   async function saveApollo() {
-    if (!apolloKey || apolloKey.startsWith('••')) { setApolloSaved('No change — key not updated'); return; }
+    if (!apolloKey || apolloKey.startsWith('\u2022\u2022')) { setApolloSaved('No change \u2014 key not updated'); return; }
     setApolloSaving(true);
     const { error } = await supabase.from('org_settings').upsert({ key: 'apollo_api_key', value: apolloKey }, { onConflict: 'key' });
     setApolloSaving(false);
     if (error) { setApolloSaved('Error: ' + error.message); }
-    else { setApolloSaved('Apollo API key saved!'); setApolloKey('••••••••••••••••'); }
+    else { setApolloSaved('Apollo API key saved!'); setApolloKey('\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'); }
     setTimeout(() => setApolloSaved(''), 4000);
   }
 
@@ -105,7 +148,7 @@ export default function Settings() {
     const { stageSpecByStage: specs } = await fetchDefaults();
     setStageSpecByStage(specs);
     setActiveStageTab('Fresh');
-    setEditingPrompt({ id: null, name: '', visibility: 'private', subject_hint: '', stage_config: emptyStageConfig() });
+    setEditingPrompt({ id: null, name: '', visibility: 'private', stage_config: emptyStageConfig() });
   }
 
   async function openEditPrompt(p) {
@@ -119,7 +162,7 @@ export default function Settings() {
         ? { mode: existing.mode || 'freeform', word_count: existing.word_count ?? null, tone: existing.tone || '', prompt_text: existing.prompt_text || '', guided: existing.guided || { focus: '', message: '', cta: '' } }
         : { mode: 'freeform', word_count: null, tone: '', prompt_text: '', guided: { focus: '', message: '', cta: '' } };
     });
-    setEditingPrompt({ id: p.id, name: p.name, visibility: p.visibility, subject_hint: p.subject_hint || '', stage_config: cfg });
+    setEditingPrompt({ id: p.id, name: p.name, visibility: p.visibility, stage_config: cfg });
   }
 
   function updateStage(stage, patch) {
@@ -156,7 +199,7 @@ export default function Settings() {
     });
     if (Object.keys(finalConfig).length === 0) { toast.error('Add rules for at least one stage before saving.'); return; }
     setSavingPrompt(true);
-    const payload = { owner_id: user.id, name: editingPrompt.name.trim(), visibility: editingPrompt.visibility, subject_hint: (editingPrompt.subject_hint || '').trim() || null, stage_config: finalConfig, prompt_text: '' };
+    const payload = { owner_id: user.id, name: editingPrompt.name.trim(), visibility: editingPrompt.visibility, stage_config: finalConfig, prompt_text: '' };
     let error;
     if (editingPrompt.id) {
       ({ error } = await supabase.from('email_prompts').update(payload).eq('id', editingPrompt.id));
@@ -192,18 +235,48 @@ export default function Settings() {
         <p style={{ fontSize: 13, color: '#888', margin: '3px 0 0' }}>Org-level configuration</p>
       </div>
 
-      {/* AI API Key */}
+      {/* Two-factor authentication */}
       <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 20, maxWidth: 560 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#111', marginBottom: 6 }}>Two-factor authentication</div>
+        <p style={{ fontSize: 13, color: '#888', marginBottom: 16, lineHeight: 1.6 }}>
+          Required on every account. Managed with an authenticator app (Google Authenticator, Authy, 1Password, etc.) via a 6-digit code at sign-in.
+        </p>
+        {mfaLoadingList ? (
+          <div style={{ color: '#aaa' }}>Loading\u2026</div>
+        ) : mfaFactors.length === 0 ? (
+          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#dc2626' }}>
+            No authenticator set up yet. You'll be asked to add one the next time you sign in.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {mfaFactors.map(f => (
+              <div key={f.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderRadius: 8, border: '1px solid #eee', background: '#fafafa' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#111', fontWeight: 500 }}>Authenticator app</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Added {new Date(f.created_at).toLocaleDateString()}</div>
+                </div>
+                <button onClick={() => removeMfaFactor(f.id)} disabled={mfaRemoving}
+                  style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fff', color: '#dc2626', cursor: 'pointer', opacity: mfaRemoving ? 0.6 : 1 }}>
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* AI API Key */}
+      <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 20, maxWidth: 560, marginTop: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: '#111', marginBottom: 6 }}>AI API Key</div>
         <p style={{ fontSize: 13, color: '#888', marginBottom: 16, lineHeight: 1.6 }}>
           This key is shared across all users. Only an Admin can update it.
           It is stored securely in Supabase and never exposed to the browser.
         </p>
         {loading ? (
-          <div style={{ color: '#aaa' }}>Loading…</div>
+          <div style={{ color: '#aaa' }}>Loading\u2026</div>
         ) : !isDirector ? (
           <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#0369a1' }}>
-            ✓ AI API key is configured by your Admin. Your outreach AI features are active.
+            \u2713 AI API key is configured by your Admin. Your outreach AI features are active.
           </div>
         ) : (
           <>
@@ -223,7 +296,7 @@ export default function Settings() {
             </div>
             <button onClick={save} disabled={saving}
               style={{ padding: '9px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Saving…' : 'Save API key'}
+              {saving ? 'Saving\u2026' : 'Save API key'}
             </button>
             {saved && <div style={{ marginTop: 12, fontSize: 13, color: saved.startsWith('Error') ? '#dc2626' : '#059669' }}>{saved}</div>}
           </>
@@ -238,19 +311,19 @@ export default function Settings() {
         </p>
         {!isDirector ? (
           <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#0369a1' }}>
-            ✓ Apollo API key is configured by your Director.
+            \u2713 Apollo API key is configured by your Director.
           </div>
         ) : (
           <>
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>API key</label>
-              <input type="password" value={apolloKey} onChange={e => setApolloKey(e.target.value)} placeholder="Paste Apollo API key…"
+              <input type="password" value={apolloKey} onChange={e => setApolloKey(e.target.value)} placeholder="Paste Apollo API key\u2026"
                 style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none' }} />
               <div style={{ fontSize: 11, color: '#aaa', marginTop: 5 }}>Paste a new key to update. Existing key is masked.</div>
             </div>
             <button onClick={saveApollo} disabled={apolloSaving}
               style={{ padding: '9px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', opacity: apolloSaving ? 0.7 : 1 }}>
-              {apolloSaving ? 'Saving…' : 'Save Apollo key'}
+              {apolloSaving ? 'Saving\u2026' : 'Save Apollo key'}
             </button>
             {apolloSaved && <div style={{ marginTop: 12, fontSize: 13, color: apolloSaved.startsWith('Error') ? '#dc2626' : '#059669' }}>{apolloSaved}</div>}
           </>
@@ -274,16 +347,6 @@ export default function Settings() {
               <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>Name</label>
               <input value={editingPrompt.name} onChange={e => setEditingPrompt(ep => ({ ...ep, name: e.target.value }))}
                 placeholder="e.g. Casual tone" style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none' }} />
-            </div>
-
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>Subject line guidance</label>
-              <textarea value={editingPrompt.subject_hint || ''} onChange={e => setEditingPrompt(ep => ({ ...ep, subject_hint: e.target.value }))}
-                placeholder="e.g. Mention the account's industry in the subject when natural" rows={2}
-                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e0e0e0', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} />
-              <p style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
-                Only affects the first (Fresh) email -- follow-ups reuse that subject with "RE:" automatically.
-              </p>
             </div>
 
             <div style={{ display: 'flex', gap: 4, marginBottom: 12, borderBottom: '1px solid #eee', flexWrap: 'wrap' }}>
@@ -436,6 +499,44 @@ export default function Settings() {
           </>
         )}
       </div>
+
+      {isDirector && (
+      <div style={{ background: '#fff', border: '1px solid #fecaca', borderRadius: 12, padding: 20, maxWidth: 560, marginTop: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#dc2626', marginBottom: 6 }}>Danger Zone</div>
+        <p style={{ fontSize: 13, color: '#888', marginBottom: 14, lineHeight: 1.6 }}>
+          Permanently delete all your contacts and accounts. This cannot be undone.
+        </p>
+        {clearMsg && (
+          <div style={{ background: '#fef9c3', border: '1px solid #fde047', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#854d0e', marginBottom: 12 }}>
+            {clearMsg}
+          </div>
+        )}
+        {!showClear ? (
+          <button onClick={() => setShowClear(true)}
+            style={{ padding: '8px 18px', background: '#fff', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+            \u{1F5D1} Clear All Data
+          </button>
+        ) : (
+          <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 10, padding: 16 }}>
+            <p style={{ fontSize: 13, color: '#dc2626', fontWeight: 600, marginBottom: 10 }}>
+              Type DELETE to confirm. This will erase all your contacts, accounts, emails and activity.
+            </p>
+            <input value={clearInput} onChange={e => setClearInput(e.target.value)} placeholder='Type DELETE'
+              style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid #fca5a5', fontSize: 13, width: '100%', boxSizing: 'border-box', outline: 'none', marginBottom: 12, letterSpacing: 1 }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={clearAllData} disabled={clearInput !== 'DELETE' || clearing}
+                style={{ padding: '8px 18px', background: clearInput === 'DELETE' ? '#dc2626' : '#e5e7eb', color: clearInput === 'DELETE' ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: clearInput === 'DELETE' ? 'pointer' : 'not-allowed' }}>
+                {clearing ? 'Deleting\u2026' : 'Yes, delete everything'}
+              </button>
+              <button onClick={() => { setShowClear(false); setClearInput(''); }}
+                style={{ padding: '8px 16px', background: '#f5f5f5', color: '#555', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+      )}
 
       {/* Org info */}
       <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 20, maxWidth: 560, marginTop: 16 }}>
