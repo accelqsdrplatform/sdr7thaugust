@@ -239,6 +239,7 @@ export default function UsersAdmin() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState({});
   const [switching, setSwitching] = useState({});
+  const [resetting, setResetting] = useState({});
   const [editing, setEditing] = useState({}); // { userId: { role, full_name, region, reports_to } }
   const [refreshKey, setRefreshKey] = useState(0);
   const [view, setView] = useState('list');
@@ -299,6 +300,23 @@ export default function UsersAdmin() {
       }
     } finally {
       setSwitching(prev => ({ ...prev, [u.id]: false }));
+    }
+  }
+
+  // Clears a user's TOTP factor(s) so they're walked through MFA setup again
+  // on next login — the only recovery path when someone loses their device,
+  // since Supabase's MFA has no built-in backup/recovery codes.
+  async function resetMfa(u) {
+    if (!window.confirm(`Reset two-factor authentication for ${u.full_name || u.email}? They will be required to set up a new authenticator the next time they sign in.`)) return;
+    setResetting(prev => ({ ...prev, [u.id]: true }));
+    try {
+      const d = await callFn({ action: 'reset_mfa', user_id: u.id });
+      if (d.cleared > 0) showToast(`MFA reset for ${u.full_name || u.email}`);
+      else showToast(`${u.full_name || u.email} had no authenticator set up`);
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setResetting(prev => ({ ...prev, [u.id]: false }));
     }
   }
 
@@ -363,6 +381,7 @@ export default function UsersAdmin() {
             const ed = editing[u.id];
             const isSaving = saving[u.id];
             const isSwitching = switching[u.id];
+            const isResetting = resetting[u.id];
             const rc = u.role ? ROLE_COLORS[u.role] : { bg: '#f5f5f3', color: '#888' };
             // A sub-admin can edit anyone in their downline, but can never grant
             // admin/sub-admin — the edge function enforces this too, this just
@@ -415,6 +434,15 @@ export default function UsersAdmin() {
                             borderRadius: 8, fontSize: 12, cursor: 'pointer', color: '#1d4ed8', fontWeight: 500,
                             opacity: isSwitching ? 0.6 : 1 }}>
                           {isSwitching ? 'Switching…' : '👁 View as'}
+                        </button>
+                      )}
+                      {isAdmin && !isSelf && u.has_profile && (
+                        <button onClick={() => resetMfa(u)} disabled={isResetting}
+                          title={`Reset two-factor authentication for ${u.full_name || u.email}`}
+                          style={{ padding: '6px 14px', background: '#fff7ed', border: '0.5px solid #fed7aa',
+                            borderRadius: 8, fontSize: 12, cursor: 'pointer', color: '#c2410c', fontWeight: 500,
+                            opacity: isResetting ? 0.6 : 1 }}>
+                          {isResetting ? 'Resetting…' : '🔑 Reset MFA'}
                         </button>
                       )}
                       {canEdit && (
