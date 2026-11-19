@@ -29,14 +29,24 @@ export function AuthProvider({ children }) {
     } catch { return null; }
   });
 
+  // Returns the freshly-computed { currentLevel, nextLevel } (or null on
+  // error) in addition to updating state — callers that need to act on the
+  // result immediately after an enroll/verify (rather than waiting for a
+  // re-render to pick up the new context value) can await this directly.
   const refreshAal = useCallback(async () => {
     setAalLoading(true);
     try {
       const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (!error && data) setAal({ currentLevel: data.currentLevel, nextLevel: data.nextLevel });
-      else setAal(null);
+      if (!error && data) {
+        const next = { currentLevel: data.currentLevel, nextLevel: data.nextLevel };
+        setAal(next);
+        return next;
+      }
+      setAal(null);
+      return null;
     } catch {
       setAal(null);
+      return null;
     } finally {
       setAalLoading(false);
     }
