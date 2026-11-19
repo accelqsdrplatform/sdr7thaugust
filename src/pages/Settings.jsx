@@ -514,7 +514,7 @@ export default function Settings() {
         {!showClear ? (
           <button onClick={() => setShowClear(true)}
             style={{ padding: '8px 18px', background: '#fff', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-            \u{1F5D1} Clear All Data
+            \u{Clear All Data
           </button>
         ) : (
           <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 10, padding: 16 }}>
