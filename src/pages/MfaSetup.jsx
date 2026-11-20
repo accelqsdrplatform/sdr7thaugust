@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -25,17 +25,25 @@ export default function MfaSetup() {
   // person lost access to their existing authenticator. Supabase requires
   // you to already be MFA-verified to add another factor, by design, so the
   // only way out is an admin clearing the stuck factor (Team Members ->
-  // Reset MFA), not anything this page can self-serve. This should now be
-  // rare — see the routing guard below — but stays as a defensive fallback.
+  // Reset MFA), not anything this page can self-serve.
   const [blocked, setBlocked] = useState(false);
+  // Guards enroll() to run at most once per page load. AuthContext refreshes
+  // the session's AAL on every token refresh and on tab focus/visibility
+  // regain (e.g. the user switching to their phone to open the authenticator
+  // app and back) — each of those flips aalLoading true->false, which used
+  // to re-run this effect and call enroll() again. enroll() cleans up any
+  // not-yet-verified factor before creating a new one, so a second run mid
+  // setup silently deleted the factor the user had just scanned and hashed
+  // a brand new QR/secret under it — their already-scanned authenticator
+  // entry then never matches again, no matter what code they enter. This
+  // was the real cause of "Invalid TOTP code entered" for many users, not
+  // device clock drift. Enrollment must only ever start once per visit.
+  const enrollStartedRef = useRef(false);
 
   useEffect(() => {
     // Don't decide anything off a stale/incomplete AAL read — AuthContext
     // fetches it asynchronously, and this page can mount before that
-    // finishes. Reacting early was the actual bug: an already-enrolled user
-    // opening /mfa-setup (an old tab, a bookmark, browser back) before aal
-    // had loaded would see mfaEnrolled as false, call enroll(), and collide
-    // with their existing verified factor — the "AAL2 required" error.
+    // finishes.
     if (aalLoading) return;
     if (mfaEnrolled) {
       // Already enrolled: either this session is already verified (nothing
@@ -44,6 +52,8 @@ export default function MfaSetup() {
       navigate(mfaVerified ? '/' : '/mfa-challenge', { replace: true });
       return;
     }
+    if (enrollStartedRef.current) return;
+    enrollStartedRef.current = true;
     enroll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aalLoading, mfaEnrolled, mfaVerified]);
@@ -72,10 +82,6 @@ export default function MfaSetup() {
     } catch (err) {
       const msg = err?.message || '';
       if (/aal2/i.test(msg) || err?.code === 'insufficient_aal') {
-        // Our own aal state said this account wasn't enrolled, but Supabase
-        // disagrees (e.g. it only just now became consistent). Refresh and
-        // retry the routing decision once before giving up and showing the
-        // blocked state — this handles any remaining propagation delay.
         const result = await refreshAal();
         if (result && result.nextLevel === 'aal2') {
           navigate(result.currentLevel === result.nextLevel ? '/' : '/mfa-challenge', { replace: true });
@@ -105,11 +111,6 @@ export default function MfaSetup() {
       });
       if (vErr) throw vErr;
 
-      // verify() just elevated this session to AAL2, but the local Supabase
-      // client can take a moment to finish propagating that before
-      // getAuthenticatorAssuranceLevel() reflects it. Poll briefly instead
-      // of navigating on stale state, which would just bounce back to this
-      // same screen via ProtectedRoute with no visible explanation.
       let confirmed = false;
       for (let i = 0; i < 10; i++) {
         const result = await refreshAal();
@@ -146,7 +147,7 @@ export default function MfaSetup() {
               Ask an Admin to reset your two-factor authentication from <strong>Team Members → Reset MFA</strong>.
               Once they do, reload this page to set up a new authenticator.
             </div>
-            <button onClick={enroll}
+            <button onClick={() => { enrollStartedRef.current = true; enroll(); }}
               style={{ width: '100%', padding: '11px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}>
               I've been reset — try again
             </button>
